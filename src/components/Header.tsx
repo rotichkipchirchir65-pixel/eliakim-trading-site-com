@@ -55,7 +55,11 @@ export default function Header({
   addLog
 }: HeaderProps) {
   const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [isLoggedOutSetupOpen, setIsLoggedOutSetupOpen] = useState(false);
   const [inputValue, setInputValue] = useState(derivAppId);
+  const [manualAccount, setManualAccount] = useState('');
+  const [manualToken, setManualToken] = useState('');
+  const [manualCurrency, setManualCurrency] = useState('USD');
   const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(() => {
     const cached = localStorage.getItem('deriv_referral_info');
     if (cached) {
@@ -171,13 +175,184 @@ export default function Header({
                 addLog(`Redirecting to secure Deriv OAuth portal with App ID: ${derivAppId}...`, "info");
                 window.location.href = oauthUrl;
               }}
-              className="bg-[#152238] hover:bg-[#1f304f] active:bg-[#0c1524] text-white text-xs font-semibold px-4 py-1.5 rounded transition-all cursor-pointer shadow-sm uppercase font-mono tracking-wider"
+              className="bg-[#152238] hover:bg-[#1f304f] active:bg-[#0c1524] text-white text-xs font-semibold px-4 py-1.5 rounded transition-all cursor-pointer shadow-sm uppercase font-mono tracking-wider text-center"
               title="Click to authenticate directly with Deriv"
             >
               Log in
             </button>
 
+            {/* 2. API Settings / Token configuration popover */}
+            <div className="relative">
+              <button
+                onClick={() => setIsLoggedOutSetupOpen(!isLoggedOutSetupOpen)}
+                className="bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 text-xs font-semibold px-3 py-1.5 rounded cursor-pointer transition-all border border-gray-300 flex items-center gap-1"
+                title="Configure custom App ID, redirect routes, or manual developer tokens"
+              >
+                <Settings className="w-3.5 h-3.5 text-gray-500" />
+                <span>API Settings</span>
+                <ChevronDown className="w-3 h-3 text-gray-500" />
+              </button>
 
+              {isLoggedOutSetupOpen && (
+                <div className="absolute right-0 mt-2.5 w-80 bg-white border border-gray-200 rounded-2xl shadow-xl p-4 z-50 text-xs text-gray-750" id="deriv-logged-out-popover">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-3">
+                    <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-red-500" />
+                      Deriv Integration Hub
+                    </span>
+                    <button 
+                      onClick={() => setIsLoggedOutSetupOpen(false)}
+                      className="p-1 hover:bg-gray-150 rounded text-gray-400 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {/* HELP SECTION */}
+                    <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100 text-blue-900 space-y-1.5 bg-clip-padding text-[11px] leading-normal font-sans">
+                      <span className="block font-bold">A. Whitelist OAuth Redirect Domain:</span>
+                      <p className="text-[10px] text-blue-800 font-medium">
+                        Deriv OAuth requires whitelisting your active domain name inside your application's profile on the Deriv developer portal:
+                      </p>
+                      
+                      <div className="flex flex-col gap-1 mt-1">
+                        <span className="text-[10.5px]">
+                          1. Visit <a href="https://api.deriv.com/" target="_blank" rel="noopener noreferrer" className="underline font-bold hover:text-blue-950">api.deriv.com</a> & log in.
+                        </span>
+                        <span className="text-[10.5px]">
+                          2. Register/update your App ID and add this active environment redirect URL:
+                        </span>
+                      </div>
+                      
+                      <div className="flex flex-col gap-1.5 mt-1.5 font-mono">
+                        <div className="flex items-center bg-white border border-blue-100 rounded p-1.5 justify-between gap-1 text-[9px] text-gray-700 select-all">
+                          <span className="break-all whitespace-pre-wrap">{window.location.origin}/</span>
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(window.location.origin + "/");
+                              addLog("Active Preview URL copied to clipboard!", "success");
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded text-blue-600 flex-shrink-0 cursor-pointer"
+                            title="Copy Active URL"
+                          >
+                            <Clipboard className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-center bg-white border border-blue-100 rounded p-1.5 justify-between gap-1 text-[9px] text-gray-700 select-all">
+                          <span className="break-all whitespace-pre-wrap text-emerald-705">https://eliakim-trading-site-com-4y76.vercel.app/</span>
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText("https://eliakim-trading-site-com-4y76.vercel.app/");
+                              addLog("Production Vercel URL copied to clipboard!", "success");
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded text-emerald-650 flex-shrink-0 cursor-pointer"
+                            title="Copy Production URL"
+                          >
+                            <Clipboard className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* APP ID CONFIG */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block font-mono">My Custom App ID:</label>
+                      <input
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => {
+                          setInputValue(e.target.value);
+                          setDerivAppId(e.target.value);
+                        }}
+                        placeholder="e.g. 33yjzVFBvxegoDiBsKb9K"
+                        className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-red-500 font-mono text-xs text-gray-800"
+                      />
+                    </div>
+
+                    {/* MANUAL CONNECTION OPTION */}
+                    <div className="border-t border-gray-150 pt-3.5 space-y-2">
+                      <div className="flex flex-col font-sans">
+                        <span className="font-bold text-gray-800 text-[11px] block">B. Instant Developer Token</span>
+                        <span className="text-[10px] text-gray-450 leading-relaxed">
+                          Bypass OAuth redirects! Generate an API token on Deriv (Settings → API Token with 'Read' and 'Trade' scopes) and insert below:
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 mt-1.5 text-left">
+                        <div className="flex gap-1.5">
+                          <div className="flex-1">
+                            <label className="text-[9px] text-gray-400 font-mono uppercase">CR Account ID:</label>
+                            <input
+                              type="text"
+                              value={manualAccount}
+                              onChange={(e) => setManualAccount(e.target.value)}
+                              placeholder="CR123456"
+                              className="w-full bg-gray-50 border border-gray-200 rounded px-2.5 py-1 focus:outline-none text-xs font-mono text-gray-800 placeholder:text-gray-300"
+                            />
+                          </div>
+                          <div className="w-20 font-sans">
+                            <label className="text-[9px] text-gray-440 font-mono uppercase">Currency:</label>
+                            <select
+                              value={manualCurrency}
+                              onChange={(e) => setManualCurrency(e.target.value)}
+                              className="w-full bg-gray-50 border border-gray-200 rounded px-1.5 py-1 focus:outline-none text-xs font-mono text-gray-800"
+                            >
+                              <option value="USD">USD</option>
+                              <option value="EUR">EUR</option>
+                              <option value="GBP">GBP</option>
+                              <option value="AUD">AUD</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[9px] text-gray-400 font-mono uppercase block">API Token (Trade scope):</label>
+                          <input
+                            type="password"
+                            value={manualToken}
+                            onChange={(e) => setManualToken(e.target.value)}
+                            placeholder="Paste 15-char API Token"
+                            className="w-full bg-gray-50 border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none text-xs font-mono text-gray-800 tracking-wider placeholder:tracking-normal placeholder:text-gray-300"
+                          />
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            if (!manualAccount.trim()) {
+                              addLog("Please enter a valid Account ID (e.g. CR123456 or VRTC123456)", "error");
+                              return;
+                            }
+                            if (!manualToken.trim()) {
+                              addLog("Please paste your Deriv API token generated with 'Read' and 'Trade' scopes.", "error");
+                              return;
+                            }
+                            const accountIdFormated = manualAccount.trim().toUpperCase();
+                            const manualObj = [{
+                              account: accountIdFormated,
+                              token: manualToken.trim(),
+                              cur: manualCurrency
+                            }];
+                            localStorage.setItem('deriv_accounts', JSON.stringify(manualObj));
+                            localStorage.setItem('deriv_active_acct', accountIdFormated);
+                            addLog(`Setting manual developer token. Activating secure context for account: ${accountIdFormated}...`, "success");
+                            setIsLoggedOutSetupOpen(false);
+                            setTimeout(() => {
+                              window.location.reload();
+                            }, 450);
+                          }}
+                          className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold uppercase text-[10px] tracking-wider rounded transition-all shadow-sm flex items-center justify-center gap-1 cursor-pointer mt-1"
+                        >
+                          <Key className="w-3 h-3 text-white" />
+                          Inject Token & Connect
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* 3. Sign up button */}
             <a
