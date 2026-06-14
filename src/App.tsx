@@ -15,6 +15,7 @@ import AICompanion from './components/AICompanion';
 import FooterStatus from './components/FooterStatus';
 
 import { TabType, Transaction, JournalLog, BotConfig, MarketSignal } from './types';
+import { getSymbolDisplayName } from './utils/displayNames';
 import { 
   Users, 
   GraduationCap, 
@@ -386,7 +387,7 @@ export default function App() {
                     id: liveTxId,
                     time: new Date().toLocaleTimeString('en-US', { hour12: false }),
                     type: 'Buy',
-                    market: tx.symbol.replace('R_', 'Volatility ').replace('1HZ10V', 'Volatility 10 (1s) Index').replace('1HZ100V', 'Volatility 100 (1s) Index').replace('1HZ50V', 'Volatility 50 (1s) Index'),
+                    market: getSymbolDisplayName(tx.symbol),
                     stake: Number(tx.amount),
                     payout: 0,
                     profit: -Number(tx.amount),
@@ -419,7 +420,7 @@ export default function App() {
                     id: liveTxId,
                     time: new Date().toLocaleTimeString('en-US', { hour12: false }),
                     type: 'Buy',
-                    market: tx.symbol.replace('R_', 'Volatility ').replace('1HZ10V', 'Volatility 10 (1s) Index').replace('1HZ100V', 'Volatility 100 (1s) Index').replace('1HZ50V', 'Volatility 50 (1s) Index'),
+                    market: getSymbolDisplayName(tx.symbol),
                     stake: Number(tx.amount) > 0 ? Number((tx.amount / 1.9).toFixed(2)) : 0.5,
                     payout: Number(tx.amount),
                     profit: Number(tx.amount) > 0 ? Number((tx.amount - 0.5).toFixed(2)) : -0.5,

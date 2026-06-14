@@ -15,6 +15,7 @@ import {
   Shield,
   Key
 } from 'lucide-react';
+import { parseReferralLink, ReferralInfo } from '../utils/referral';
 
 interface HeaderProps {
   balance: number;
@@ -55,11 +56,53 @@ export default function Header({
 }: HeaderProps) {
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [inputValue, setInputValue] = useState(derivAppId);
+  const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(() => {
+    const cached = localStorage.getItem('deriv_referral_info');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
 
   // Sync input value with parent state
   useEffect(() => {
     setInputValue(derivAppId);
   }, [derivAppId]);
+
+  useEffect(() => {
+    const info = parseReferralLink(window.location.href);
+    if (info) {
+      localStorage.setItem('deriv_referral_info', JSON.stringify(info));
+      setReferralInfo(info);
+      addLog(`Partner tracking detected: active token ${info.affiliateToken} (${info.affiliateTokenParam})`, "success");
+    }
+  }, []);
+
+  const getSignUpUrl = () => {
+    const baseUrl = "https://track.deriv.com/link.fcg?op=register";
+    if (!referralInfo) return baseUrl;
+
+    try {
+      const url = new URL(baseUrl);
+      url.searchParams.set(referralInfo.affiliateTokenParam, referralInfo.affiliateToken);
+      if (referralInfo.utmCampaign) {
+        url.searchParams.set('utm_campaign', referralInfo.utmCampaign);
+      }
+      if (referralInfo.utmSource) {
+        url.searchParams.set('utm_source', referralInfo.utmSource);
+      }
+      if (referralInfo.utmMedium) {
+        url.searchParams.set('utm_medium', referralInfo.utmMedium);
+      }
+      return url.toString();
+    } catch {
+      return baseUrl;
+    }
+  };
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50 px-4 py-2.5 flex items-center justify-between" id="app-header">
       {/* Left side: Logo */}
@@ -124,7 +167,7 @@ export default function Header({
             <button
               onClick={() => {
                 const redirectUrl = encodeURIComponent(window.location.origin + "/");
-                const oauthUrl = `https://oauth.deriv.app/oauth?app_id=${derivAppId}&l=en&redirect_uri=${redirectUrl}`;
+                const oauthUrl = `https://oauth.deriv.com/oauth2/authorize?app_id=${derivAppId}&l=en&redirect_uri=${redirectUrl}`;
                 addLog(`Redirecting to secure Deriv OAuth portal with App ID: ${derivAppId}...`, "info");
                 window.location.href = oauthUrl;
               }}
@@ -138,10 +181,11 @@ export default function Header({
 
             {/* 3. Sign up button */}
             <a
-              href="https://track.deriv.com/link.fcg?op=register"
+              href={getSignUpUrl()}
               target="_blank"
               rel="noopener noreferrer"
               className="bg-[#152238] hover:bg-[#1f304f] active:bg-[#0c1524] text-white text-xs font-semibold px-4 py-1.5 rounded transition-all shadow-sm uppercase font-mono tracking-wider text-center cursor-pointer"
+              title={referralInfo ? `Sign up using active affiliate partner: ${referralInfo.affiliateToken}` : undefined}
             >
               Sign up
             </a>
