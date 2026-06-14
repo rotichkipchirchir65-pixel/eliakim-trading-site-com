@@ -20,6 +20,7 @@ interface UltimateBotProps {
   setBotConfig: (cfg: BotConfig) => void;
   isLiveConnected: boolean;
   executeDerivTrade: (market: string, contractType: string, stake: number, duration: number, durationUnit: string) => boolean;
+  lastTickBySymbol: Record<string, { quote: number; symbol: string; lastDigit: number; epoch: number }>;
 }
 
 export default function UltimateBotTab({ 
@@ -28,10 +29,15 @@ export default function UltimateBotTab({
   botConfig, 
   setBotConfig,
   isLiveConnected,
-  executeDerivTrade
+  executeDerivTrade,
+  lastTickBySymbol
 }: UltimateBotProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [runsCounter, setRunsCounter] = useState(0);
+
+  const liveTick = lastTickBySymbol['R_100'];
+  const livePriceQuote = liveTick ? liveTick.quote.toFixed(2) : '---.--';
+  const livePriceDigit = liveTick ? liveTick.lastDigit : '-';
 
   // Set up automated running loop mapping to real Deriv trades
   useEffect(() => {
@@ -122,15 +128,30 @@ export default function UltimateBotTab({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Real-time price widget */}
+            <div className="bg-gray-50 border border-gray-150 py-2 px-3.5 rounded-2xl flex items-center gap-2.5 font-mono">
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${liveTick ? 'bg-emerald-400' : 'bg-gray-400'}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${liveTick ? 'bg-emerald-500' : 'bg-gray-400'}`}></span>
+              </span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Volatility 100 Index:</span>
+              <span className="text-xs font-bold text-gray-900 transition-all">${livePriceQuote}</span>
+              {liveTick && (
+                <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded ml-1 border border-emerald-100">
+                  Digit: {livePriceDigit}
+                </span>
+              )}
+            </div>
+
             <button
               onClick={resetForm}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-lg transition-all cursor-pointer"
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-xl transition-all cursor-pointer"
               title="Reset parameters"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
-            <span className="text-xs font-bold text-gray-400 font-mono">
+            <span className="text-xs font-bold text-gray-600 font-mono bg-gray-50 py-2.5 px-3.5 border border-gray-150 rounded-xl">
               Runs: {runsCounter}
             </span>
           </div>

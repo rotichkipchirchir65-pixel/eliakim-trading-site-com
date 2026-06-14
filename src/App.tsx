@@ -59,11 +59,16 @@ export default function App() {
   const wsRef = useState<WebSocket | null>(null); // simple container state
   const [liveWs, setLiveWs] = useState<WebSocket | null>(null);
 
+  // Real-time tick stream and last digits history state
+  const [lastTickBySymbol, setLastTickBySymbol] = useState<Record<string, { quote: number; symbol: string; lastDigit: number; epoch: number }>>({});
+  const [digitsHistoryBySymbol, setDigitsHistoryBySymbol] = useState<Record<string, number[]>>({});
+
   // Helper mapping functions
   const mapMarketToSymbol = (marketName: string): string => {
     const name = marketName.toLowerCase();
     if (name.includes('100 (1s)') || name.includes('100(1s)')) return '1HZ100V';
     if (name.includes('10 (1s)') || name.includes('10(1s)')) return '1HZ10V';
+    if (name.includes('50 (1s)') || name.includes('50(1s)')) return '1HZ50V';
     if (name.includes('100')) return 'R_100';
     if (name.includes('75')) return 'R_75';
     if (name.includes('50')) return 'R_50';
@@ -228,14 +233,10 @@ export default function App() {
 
   // Sync balances and authorize active account with Deriv WS API
   useEffect(() => {
-    if (!activeDerivAcct || derivAccounts.length === 0) return;
-    const selectedAccount = derivAccounts.find(a => a.account === activeDerivAcct);
-    if (!selectedAccount || !selectedAccount.token) return;
-
-    addLog(`Establishing live WebSocket connection to Deriv API for ${activeDerivAcct}...`, 'info');
-
     const appID = derivAppId || '33yjzVFBvxegoDiBsKb9K';
     const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${appID}&l=en`;
+    
+    addLog(`Initiating live WebSocket gateway to Deriv exchange (App ID: ${appID})...`, 'info');
     
     let ws: WebSocket | null = null;
     let pingInterval: NodeJS.Timeout | null = null;
@@ -244,9 +245,29 @@ export default function App() {
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        // Log in to Deriv using the active token
-        ws?.send(JSON.stringify({ authorize: selectedAccount.token }));
         setLiveWs(ws);
+        
+        // Log in to Deriv using the active token if user authenticated
+        const selectedAccount = activeDerivAcct ? derivAccounts.find(a => a.account === activeDerivAcct) : null;
+        if (selectedAccount && selectedAccount.token) {
+          addLog(`Transmitting authorization tokens for account ${activeDerivAcct}...`, 'info');
+          ws.send(JSON.stringify({ authorize: selectedAccount.token }));
+        } else {
+          addLog("WebSocket established in active public data sync mode (no authorization required).", "success");
+        }
+        
+        // Subscribe to real-time tick streams & query 100 historical ticks for each underlying index
+        const symbolsToSubscribe = ['1HZ100V', '1HZ10V', '1HZ50V', 'R_100', 'R_75', 'R_50', 'R_25', 'R_10'];
+        symbolsToSubscribe.forEach(symbol => {
+          ws?.send(JSON.stringify({ ticks: symbol }));
+          ws?.send(JSON.stringify({
+            ticks_history: symbol,
+            adjust_start_time: 1,
+            count: 100,
+            end: "latest",
+            style: "ticks"
+          }));
+        });
         
         // Setup simple heartbeat ping to keep connection alive
         pingInterval = setInterval(() => {
@@ -265,12 +286,71 @@ export default function App() {
             return;
           }
           
+          // Handle public price ticks
+          if (data.msg_type === 'tick') {
+            const tickObj = data.tick;
+            const symbol = tickObj.symbol;
+            const quote = tickObj.quote;
+            const pipSize = tickObj.pip_size || 2;
+            const formatted = quote.toFixed(pipSize);
+            const lastDigit = parseInt(formatted.charAt(formatted.length - 1));
+            
+            setLastTickBySymbol(prev => ({
+              ...prev,
+              [symbol]: {
+                quote: quote,
+                symbol: symbol,
+                lastDigit: lastDigit,
+                epoch: tickObj.epoch
+              }
+            }));
+
+            setDigitsHistoryBySymbol(prev => {
+              const existing = prev[symbol] || [];
+              const updated = [...existing, lastDigit];
+              if (updated.length > 150) {
+                updated.shift();
+              }
+              return {
+                ...prev,
+                [symbol]: updated
+              };
+            });
+          }
+
+          // Handle tick histories
+          if (data.msg_type === 'history') {
+            const symbol = data.echo_req.ticks_history;
+            const prices = data.history.prices;
+            if (prices && prices.length > 0) {
+              const digits = prices.map((price: number) => {
+                const formatted = price.toFixed(2);
+                return parseInt(formatted.charAt(formatted.length - 1));
+              });
+              setDigitsHistoryBySymbol(prev => ({
+                ...prev,
+                [symbol]: digits
+              }));
+              
+              const lastPrice = prices[prices.length - 1];
+              setLastTickBySymbol(prev => ({
+                ...prev,
+                [symbol]: {
+                  quote: lastPrice,
+                  symbol: symbol,
+                  lastDigit: digits[digits.length - 1],
+                  epoch: Date.now() / 1000
+                }
+              }));
+            }
+          }
+
           if (data.msg_type === 'authorize') {
             const auth = data.authorize;
             addLog(`[Deriv Authorize] Connected to ${auth.loginid} (${auth.fullname || 'Verified Account'})`, 'success');
             
             const liveBal = Number(auth.balance || 0);
-            if (activeDerivAcct.startsWith('VRTC')) {
+            if (activeDerivAcct && activeDerivAcct.startsWith('VRTC')) {
               setDemoBalance(liveBal);
             } else {
               setRealBalance(liveBal);
@@ -285,7 +365,7 @@ export default function App() {
           if (data.msg_type === 'balance') {
             const bal = data.balance;
             const liveBal = Number(bal.balance || 0);
-            if (activeDerivAcct.startsWith('VRTC')) {
+            if (activeDerivAcct && activeDerivAcct.startsWith('VRTC')) {
               setDemoBalance(liveBal);
             } else {
               setRealBalance(liveBal);
@@ -306,7 +386,7 @@ export default function App() {
                     id: liveTxId,
                     time: new Date().toLocaleTimeString('en-US', { hour12: false }),
                     type: 'Buy',
-                    market: tx.symbol.replace('R_', 'Volatility ').replace('1HZ10V', 'Volatility 10 (1s) Index').replace('1HZ100V', 'Volatility 100 (1s) Index'),
+                    market: tx.symbol.replace('R_', 'Volatility ').replace('1HZ10V', 'Volatility 10 (1s) Index').replace('1HZ100V', 'Volatility 100 (1s) Index').replace('1HZ50V', 'Volatility 50 (1s) Index'),
                     stake: Number(tx.amount),
                     payout: 0,
                     profit: -Number(tx.amount),
@@ -339,7 +419,7 @@ export default function App() {
                     id: liveTxId,
                     time: new Date().toLocaleTimeString('en-US', { hour12: false }),
                     type: 'Buy',
-                    market: tx.symbol.replace('R_', 'Volatility '),
+                    market: tx.symbol.replace('R_', 'Volatility ').replace('1HZ10V', 'Volatility 10 (1s) Index').replace('1HZ100V', 'Volatility 100 (1s) Index').replace('1HZ50V', 'Volatility 50 (1s) Index'),
                     stake: Number(tx.amount) > 0 ? Number((tx.amount / 1.9).toFixed(2)) : 0.5,
                     payout: Number(tx.amount),
                     profit: Number(tx.amount) > 0 ? Number((tx.amount - 0.5).toFixed(2)) : -0.5,
@@ -513,6 +593,8 @@ export default function App() {
               setActiveTab={setActiveTab}
               addLog={addLog}
               loadSignalToBot={handleLoadSignalToBot}
+              lastTickBySymbol={lastTickBySymbol}
+              digitsHistoryBySymbol={digitsHistoryBySymbol}
             />
           )}
 
@@ -529,6 +611,8 @@ export default function App() {
               addTransaction={addTransaction}
               isLiveConnected={activeDerivAcct !== null}
               executeDerivTrade={executeDerivTrade}
+              lastTickBySymbol={lastTickBySymbol}
+              digitsHistoryBySymbol={digitsHistoryBySymbol}
             />
           )}
 
@@ -552,6 +636,8 @@ export default function App() {
               addTransaction={addTransaction}
               isLiveConnected={activeDerivAcct !== null}
               executeDerivTrade={executeDerivTrade}
+              lastTickBySymbol={lastTickBySymbol}
+              digitsHistoryBySymbol={digitsHistoryBySymbol}
             />
           )}
 
@@ -563,6 +649,7 @@ export default function App() {
               setBotConfig={setBotConfig}
               isLiveConnected={activeDerivAcct !== null}
               executeDerivTrade={executeDerivTrade}
+              lastTickBySymbol={lastTickBySymbol}
             />
           )}
 
@@ -572,6 +659,7 @@ export default function App() {
               addTransaction={addTransaction}
               isLiveConnected={activeDerivAcct !== null}
               executeDerivTrade={executeDerivTrade}
+              lastTickBySymbol={lastTickBySymbol}
             />
           )}
 

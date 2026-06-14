@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Zap, 
   HelpCircle, 
@@ -17,6 +17,8 @@ interface AnalysistoolsProps {
   addTransaction: (tx: any) => void;
   isLiveConnected: boolean;
   executeDerivTrade: (marketName: string, contractType: string, stake: number, duration?: number, durationUnit?: string) => boolean;
+  lastTickBySymbol: Record<string, { quote: number; symbol: string; lastDigit: number; epoch: number }>;
+  digitsHistoryBySymbol: Record<string, number[]>;
 }
 
 interface IndexAnalysis {
@@ -30,7 +32,14 @@ interface IndexAnalysis {
   ticksValue: number;
 }
 
-export default function AnalysistoolsTab({ addLog, addTransaction, isLiveConnected, executeDerivTrade }: AnalysistoolsProps) {
+export default function AnalysistoolsTab({ 
+  addLog, 
+  addTransaction, 
+  isLiveConnected, 
+  executeDerivTrade,
+  lastTickBySymbol,
+  digitsHistoryBySymbol
+}: AnalysistoolsProps) {
   const [ticksFilter, setTicksFilter] = useState(120);
   const [activeSubTab, setActiveSubTab] = useState<'DCIRCLE' | 'Analysis'>('DCIRCLE');
   const [isAutoScanning, setIsAutoScanning] = useState(false);
@@ -42,16 +51,16 @@ export default function AnalysistoolsTab({ addLog, addTransaction, isLiveConnect
       price: 666.38,
       ticksCount: 120,
       digits: [
-        { num: 0, percent: 10.8, colorType: 'normal' },
+        { num: 0, percent: 10.0, colorType: 'normal' },
         { num: 1, percent: 10.0, colorType: 'normal' },
-        { num: 2, percent: 15.8, colorType: 'most' }, // teal
-        { num: 3, percent: 8.3, colorType: 'second-least' },
-        { num: 4, percent: 4.2, colorType: 'least' }, // red
-        { num: 5, percent: 8.3, colorType: 'normal' },
-        { num: 6, percent: 9.2, colorType: 'normal' },
-        { num: 7, percent: 10.8, colorType: 'second-most' },
-        { num: 8, percent: 10.8, colorType: 'normal' },
-        { num: 9, percent: 11.7, colorType: 'normal' },
+        { num: 2, percent: 10.0, colorType: 'normal' },
+        { num: 3, percent: 10.0, colorType: 'normal' },
+        { num: 4, percent: 10.0, colorType: 'normal' },
+        { num: 5, percent: 10.0, colorType: 'normal' },
+        { num: 6, percent: 10.0, colorType: 'normal' },
+        { num: 7, percent: 10.0, colorType: 'normal' },
+        { num: 8, percent: 10.0, colorType: 'normal' },
+        { num: 9, percent: 10.0, colorType: 'normal' },
       ],
       history: [8, 7, 8, 4, 7, 2, 9, 1, 7, 8],
       tradeType: 'Even / Odd',
@@ -63,16 +72,16 @@ export default function AnalysistoolsTab({ addLog, addTransaction, isLiveConnect
       price: 10075.29,
       ticksCount: 120,
       digits: [
-        { num: 0, percent: 12.5, colorType: 'normal' },
+        { num: 0, percent: 10.0, colorType: 'normal' },
         { num: 1, percent: 10.0, colorType: 'normal' },
-        { num: 2, percent: 10.8, colorType: 'normal' },
-        { num: 3, percent: 7.5, colorType: 'second-least' },
-        { num: 4, percent: 7.5, colorType: 'least' },
-        { num: 5, percent: 14.2, colorType: 'most' },
-        { num: 6, percent: 6.7, colorType: 'second-least' },
-        { num: 7, percent: 13.3, colorType: 'second-most' },
-        { num: 8, percent: 8.3, colorType: 'normal' },
-        { num: 9, percent: 9.2, colorType: 'normal' },
+        { num: 2, percent: 10.0, colorType: 'normal' },
+        { num: 3, percent: 10.0, colorType: 'normal' },
+        { num: 4, percent: 10.0, colorType: 'normal' },
+        { num: 5, percent: 10.0, colorType: 'normal' },
+        { num: 6, percent: 10.0, colorType: 'normal' },
+        { num: 7, percent: 10.0, colorType: 'normal' },
+        { num: 8, percent: 10.0, colorType: 'normal' },
+        { num: 9, percent: 10.0, colorType: 'normal' },
       ],
       history: [7, 7, 1, 7, 1, 7, 3, 9, 9, 9],
       tradeType: 'Even / Odd',
@@ -84,16 +93,16 @@ export default function AnalysistoolsTab({ addLog, addTransaction, isLiveConnect
       price: 275372.78,
       ticksCount: 120,
       digits: [
-        { num: 0, percent: 9.2, colorType: 'normal' },
-        { num: 1, percent: 14.2, colorType: 'most' },
-        { num: 2, percent: 12.5, colorType: 'second-most' },
+        { num: 0, percent: 10.0, colorType: 'normal' },
+        { num: 1, percent: 10.0, colorType: 'normal' },
+        { num: 2, percent: 10.0, colorType: 'normal' },
         { num: 3, percent: 10.0, colorType: 'normal' },
-        { num: 4, percent: 5.0, colorType: 'least' },
-        { num: 5, percent: 7.5, colorType: 'second-least' },
-        { num: 6, percent: 10.8, colorType: 'normal' },
-        { num: 7, percent: 10.8, colorType: 'normal' },
-        { num: 8, percent: 9.2, colorType: 'normal' },
-        { num: 9, percent: 10.8, colorType: 'normal' },
+        { num: 4, percent: 10.0, colorType: 'normal' },
+        { num: 5, percent: 10.0, colorType: 'normal' },
+        { num: 6, percent: 10.0, colorType: 'normal' },
+        { num: 7, percent: 10.0, colorType: 'normal' },
+        { num: 8, percent: 10.0, colorType: 'normal' },
+        { num: 9, percent: 10.0, colorType: 'normal' },
       ],
       history: [1, 2, 9, 1, 7, 8, 4, 3, 1, 1],
       tradeType: 'Even / Odd',
@@ -102,81 +111,92 @@ export default function AnalysistoolsTab({ addLog, addTransaction, isLiveConnect
     }
   ]);
 
-  // Live ticking simulation
+  const lastTriggeredEpochsRef = useRef<Record<string, number>>({});
+
+  const mapIndexToSymbol = (indexName: string): string => {
+    if (indexName.includes('100 (1s)')) return '1HZ100V';
+    if (indexName.includes('10 (1s)')) return '1HZ10V';
+    if (indexName.includes('50 (1s)')) return '1HZ50V';
+    return '1HZ100V';
+  };
+
+  // Sync internal indices feeds with real-time live WS ticks and histories
   useEffect(() => {
-    const timer = setInterval(() => {
-      setIndices((prev) => 
-        prev.map((ind) => {
-          // Tick price
-          const pricePct = (Math.random() - 0.5) * 0.04;
-          const newPrice = Number((ind.price + (ind.price * pricePct)).toFixed(2));
+    setIndices((prev) => 
+      prev.map((ind) => {
+        const symbol = mapIndexToSymbol(ind.name);
+        const liveTick = lastTickBySymbol[symbol];
+        const rawHistory = digitsHistoryBySymbol[symbol] || [];
+        
+        // Update current ticks price
+        const currentPrice = liveTick ? Number(liveTick.quote.toFixed(2)) : ind.price;
+        
+        // Take segment based on ticksFilter
+        const subsetHistory = rawHistory.slice(-ticksFilter);
+        
+        // Recalculate digit count frequency distribution
+        const counts = Array(10).fill(0);
+        subsetHistory.forEach(d => {
+          if (d >= 0 && d <= 9) counts[d]++;
+        });
+        
+        const total = subsetHistory.length || 1;
+        const percentages = counts.map(c => Number(((c / total) * 100).toFixed(1)));
+        
+        // Determine ranks for class styling
+        const sortedPctWithIdx = percentages.map((val, i) => ({ val, i })).sort((a, b) => b.val - a.val);
+        const mostIdx = sortedPctWithIdx[0].i;
+        const secondMostIdx = sortedPctWithIdx[1].i;
+        const leastIdx = sortedPctWithIdx[sortedPctWithIdx.length - 1].i;
+        const secondLeastIdx = sortedPctWithIdx[sortedPctWithIdx.length - 2].i;
+        
+        const updatedDigits = ind.digits.map((item, idx) => {
+          let colorType: 'most' | 'second-most' | 'least' | 'second-least' | 'normal' = 'normal';
+          if (idx === mostIdx) colorType = 'most';
+          else if (idx === secondMostIdx) colorType = 'second-most';
+          else if (idx === leastIdx) colorType = 'least';
+          else if (idx === secondLeastIdx) colorType = 'second-least';
           
-          // Generate new dynamic single-digit live tick
-          const newDigit = Math.floor(Math.random() * 10);
-          const newHistory = [...ind.history.slice(1), newDigit];
+          return {
+            ...item,
+            percent: percentages[idx],
+            colorType
+          };
+        });
 
-          // Calculate new digit distributions slightly
-          const baseCount = ind.ticksCount;
-          const originalDist = ind.digits.map(d => d.percent);
-          
-          // Mutate target index distribution slightly
-          const distributionSum = originalDist.reduce((a, b) => a + b, 0);
-          let newDist = originalDist.map(pct => {
-            const delta = (Math.random() - 0.5) * 0.6;
-            return Math.min(Math.max(pct + delta, 3.0), 18.0);
-          });
-          
-          // Re-norm sum to 100%
-          const newSum = newDist.reduce((a, b) => a + b, 0);
-          newDist = newDist.map(val => (val / newSum) * 100);
+        const currentHistory = subsetHistory.slice(-10);
 
-          // Classify color ranks
-          const sortedPctWithIdx = newDist.map((val, i) => ({ val, i })).sort((a, b) => b.val - a.val);
-          const mostIdx = sortedPctWithIdx[0].i;
-          const secondMostIdx = sortedPctWithIdx[1].i;
-          const leastIdx = sortedPctWithIdx[sortedPctWithIdx.length - 1].i;
-          const secondLeastIdx = sortedPctWithIdx[sortedPctWithIdx.length - 2].i;
-
-          const updatedDigits = ind.digits.map((item, idx) => {
-            let colorType: 'most' | 'second-most' | 'least' | 'second-least' | 'normal' = 'normal';
-            if (idx === mostIdx) colorType = 'most';
-            else if (idx === secondMostIdx) colorType = 'second-most';
-            else if (idx === leastIdx) colorType = 'least';
-            else if (idx === secondLeastIdx) colorType = 'second-least';
-
-            return {
-              ...item,
-              percent: parseFloat(newDist[idx].toFixed(1)),
-              colorType
-            };
-          });
-
-          // If auto scanning is enabled, transmit real trades to Deriv
-          if (isAutoScanning) {
-            if (!isLiveConnected) {
-              addLog("[Analysis Tools] Live account offline! Background auto-scanning paused.", "warning");
-              setIsAutoScanning(false);
-            } else if (Math.random() > 0.94) {
-              const chosenPrediction = Math.random() > 0.5 ? 'Even' : 'Odd';
-              const stakeAmt = ind.stake;
+        // Real-Time Auto Trend-Scanner Trigger
+        if (isAutoScanning && isLiveConnected && liveTick) {
+          const lastProcessedEpoch = lastTriggeredEpochsRef.current[symbol] || 0;
+          if (liveTick.epoch > lastProcessedEpoch) {
+            const consecutiveGroup = subsetHistory.slice(-4);
+            if (consecutiveGroup.length === 4) {
+              const allEven = consecutiveGroup.every(d => d % 2 === 0);
+              const allOdd = consecutiveGroup.every(d => d % 2 !== 0);
               
-              addLog(`[Auto-Scan] Pattern trigger matched on ${ind.name}. Dispatching options purchase order with stake $${stakeAmt}...`, 'info');
-              executeDerivTrade(ind.name, chosenPrediction, stakeAmt, ind.ticksValue, 't');
+              if (allEven || allOdd) {
+                // Store processed timestamp to prevent duplicated trades
+                lastTriggeredEpochsRef.current[symbol] = liveTick.epoch;
+                const predictionSide = allEven ? 'Odd' : 'Even';
+                const stakeAmt = ind.stake;
+                
+                addLog(`[Auto-Scan] Trend signal matched on ${ind.name} (4 consecutive ${allEven ? 'EVEN' : 'ODD'} symbols). Sending live buy order with prediction: ${predictionSide}, stake: $${stakeAmt}`, 'info');
+                executeDerivTrade(ind.name, predictionSide, stakeAmt, ind.ticksValue, 't');
+              }
             }
           }
+        }
 
-          return {
-            ...ind,
-            price: newPrice,
-            history: newHistory,
-            digits: updatedDigits
-          };
-        })
-      );
-    }, 2000);
-
-    return () => clearInterval(timer);
-  }, [isAutoScanning, isLiveConnected, executeDerivTrade]);
+        return {
+          ...ind,
+          price: currentPrice,
+          digits: updatedDigits,
+          history: currentHistory.length > 0 ? currentHistory : ind.history
+        };
+      })
+    );
+  }, [lastTickBySymbol, digitsHistoryBySymbol, ticksFilter, isAutoScanning, isLiveConnected, executeDerivTrade]);
 
   const handleManualTrade = (indexName: string, selection: 'Even' | 'Odd', indPrice: number, stakeVal: number) => {
     if (!isLiveConnected) {

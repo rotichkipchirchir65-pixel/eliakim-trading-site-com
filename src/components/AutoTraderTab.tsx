@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Percent, 
   HelpCircle, 
@@ -17,13 +17,17 @@ interface AutoTraderProps {
   addTransaction: (tx: any) => void;
   isLiveConnected: boolean;
   executeDerivTrade: (market: string, contractType: string, stake: number, duration: number, durationUnit: string) => boolean;
+  lastTickBySymbol: Record<string, { quote: number; symbol: string; lastDigit: number; epoch: number }>;
+  digitsHistoryBySymbol: Record<string, number[]>;
 }
 
 export default function AutoTraderTab({ 
   addLog, 
   addTransaction,
   isLiveConnected,
-  executeDerivTrade
+  executeDerivTrade,
+  lastTickBySymbol,
+  digitsHistoryBySymbol
 }: AutoTraderProps) {
   // Digit Card state
   const [digitTicksTrigger, setDigitTicksTrigger] = useState(5);
@@ -42,82 +46,96 @@ export default function AutoTraderTab({
   const [pctMartingale, setPctMartingale] = useState(1.2);
   const [isPctRunning, setIsPctRunning] = useState(false);
 
-  // Simulate progress percentages ticking
+  // Synchronize statistics with live incoming Volatility 100 Index ('R_100') ticks
   useEffect(() => {
-    const timer = setInterval(() => {
-      // Rotate digit circles occasionally
-      setDigitHistory((prev) => {
-        const nextLetter = Math.random() > 0.5 ? 'E' : 'O';
-        return [...prev.slice(1), nextLetter];
-      });
+    const realHistory = digitsHistoryBySymbol['R_100'] || [];
+    if (realHistory.length === 0) return;
 
-      // Fluctuate even/odd percent card slightly
-      setEvenPct((prev) => {
-        const delta = (Math.random() - 0.5) * 1.6;
-        const newEven = Math.min(Math.max(prev + delta, 35), 65);
-        setOddPct(parseFloat((100 - newEven).toFixed(2)));
-        return parseFloat(newEven.toFixed(2));
-      });
-    }, 3000);
+    // Convert last 10 digits to 'E' and 'O' bubble notations
+    const translated = realHistory.slice(-10).map((digit) => (digit % 2 === 0 ? 'E' as const : 'O' as const));
+    setDigitHistory(translated);
 
-    return () => clearInterval(timer);
-  }, []);
+    // Compute exact even/odd ratio over history
+    const evensCount = realHistory.filter(d => d % 2 === 0).length;
+    const computedEvenPct = Number(((evensCount / realHistory.length) * 100).toFixed(2));
+    setEvenPct(computedEvenPct);
+    setOddPct(Number((100 - computedEvenPct).toFixed(2)));
+  }, [digitsHistoryBySymbol['R_100']]);
 
-  // Executing auto trading runs on Deriv WebSocket
+  const lastProcessedEpochRef = useRef<number>(0);
+
+  // High-precision live execution logic triggered on new tick arrival
   useEffect(() => {
-    if (!isDigitRunning && !isPctRunning) return;
-
     if (!isLiveConnected) {
-      addLog("[Auto Trader] Connection lost! Pausing running automations.", "warning");
-      setIsDigitRunning(false);
-      setIsPctRunning(false);
+      if (isDigitRunning || isPctRunning) {
+        addLog("[Auto Trader] Connection lost! Pausing running automations.", "warning");
+        setIsDigitRunning(false);
+        setIsPctRunning(false);
+      }
       return;
     }
 
-    const runTimer = setInterval(() => {
-      if (isDigitRunning) {
-        // Evaluate digit logic: E.g. check if last 5 digits matching condition
-        const recentSubset = digitHistory.slice(-digitTicksTrigger);
-        const countMatching = recentSubset.filter(x => x === (digitMatchSelection === 'Even' ? 'E' : 'O')).length;
+    const currentTick = lastTickBySymbol['R_100'];
+    if (!currentTick) return;
+
+    // Validate epoch to avoid multiple executions on cached/stale tick events
+    if (currentTick.epoch <= lastProcessedEpochRef.current) return;
+    lastProcessedEpochRef.current = currentTick.epoch;
+
+    const realDigits = digitsHistoryBySymbol['R_100'] || [];
+    if (realDigits.length === 0) return;
+
+    if (isDigitRunning) {
+      const translated = realDigits.map(d => (d % 2 === 0 ? 'E' : 'O'));
+      const recentSubset = translated.slice(-digitTicksTrigger);
+      const countMatching = recentSubset.filter(x => x === (digitMatchSelection === 'Even' ? 'E' : 'O')).length;
+      
+      // If the trend is strong enough inside specified trigger ticks count
+      if (countMatching >= Math.ceil(digitTicksTrigger * 0.6)) { 
+        addLog(`[Auto Trader Bot] Trigger matched! pattern: ${countMatching}/${digitTicksTrigger} ${digitMatchSelection} digits on tick ${currentTick.quote.toFixed(2)}. Sending order...`, 'info');
         
-        if (countMatching >= 3) {
-          addLog(`[Auto Trader] Digits strategy triggered condition. prediction: ${digitMatchSelection}`, 'info');
-          
-          const success = executeDerivTrade(
-            'Volatility 100 Index',
-            digitMatchSelection,
-            digitStake,
-            1,
-            't'
-          );
-          if (!success) {
-            setIsDigitRunning(false);
-          }
-        }
+        executeDerivTrade(
+          'Volatility 100 Index',
+          digitMatchSelection,
+          digitStake,
+          1,
+          't'
+        );
       }
+    }
 
-      if (isPctRunning) {
-        // Compare percentages threshold
-        const targetPct = pctConditionType === 'Even%' ? evenPct : oddPct;
-        if (targetPct >= pctConditionValue) {
-          addLog(`[Auto Trader] Percentage strategy condition met (${targetPct}%). Transmitting purchase...`, 'info');
-          
-          const success = executeDerivTrade(
-            'Volatility 100 Index',
-            pctConditionType === 'Even%' ? 'Even' : 'Odd',
-            pctStake,
-            1,
-            't'
-          );
-          if (!success) {
-            setIsPctRunning(false);
-          }
-        }
+    if (isPctRunning) {
+      const evensCount = realDigits.filter(d => d % 2 === 0).length;
+      const computedEven = (evensCount / realDigits.length) * 100;
+      const computedOdd = 100 - computedEven;
+      const targetPct = pctConditionType === 'Even%' ? computedEven : computedOdd;
+      
+      if (targetPct >= pctConditionValue) {
+        addLog(`[Auto Trader Bot] Percentage threshold met! ${pctConditionType} is ${targetPct.toFixed(2)}% (Target: >= ${pctConditionValue}%). Emitting direct buy...`, 'info');
+        
+        executeDerivTrade(
+          'Volatility 100 Index',
+          pctConditionType === 'Even%' ? 'Even' : 'Odd',
+          pctStake,
+          1,
+          't'
+        );
       }
-    }, 6000);
-
-    return () => clearInterval(runTimer);
-  }, [isDigitRunning, isPctRunning, digitHistory, evenPct, oddPct, digitMatchSelection, digitStake, pctConditionType, pctConditionValue, pctStake, isLiveConnected, executeDerivTrade]);
+    }
+  }, [
+    lastTickBySymbol['R_100'],
+    digitsHistoryBySymbol['R_100'],
+    isDigitRunning,
+    isPctRunning,
+    digitTicksTrigger,
+    digitMatchSelection,
+    digitStake,
+    pctConditionType,
+    pctConditionValue,
+    pctStake,
+    isLiveConnected,
+    executeDerivTrade
+  ]);
 
   const toggleDigitBot = () => {
     if (!isLiveConnected && !isDigitRunning) {

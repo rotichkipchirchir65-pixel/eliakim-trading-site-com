@@ -17,13 +17,15 @@ interface DTraderProps {
   addTransaction: (tx: any) => void;
   isLiveConnected: boolean;
   executeDerivTrade: (market: string, contractType: string, stake: number, duration: number, durationUnit: string) => boolean;
+  lastTickBySymbol: Record<string, { quote: number; symbol: string; lastDigit: number; epoch: number }>;
 }
 
 export default function DTraderTab({ 
   addLog, 
   addTransaction,
   isLiveConnected,
-  executeDerivTrade
+  executeDerivTrade,
+  lastTickBySymbol
 }: DTraderProps) {
   const [accumulatorRate, setAccumulatorRate] = useState('1%');
   const [stakeAmount, setStakeAmount] = useState(1.0);
@@ -34,39 +36,35 @@ export default function DTraderTab({
   const [multiplier, setMultiplier] = useState(1.0);
   const [isContractActive, setIsContractActive] = useState(false);
 
-  // Animate dynamic chart coordinates ticking
+  // Bind chart data and pricing directly into live streamed ticks for R_100
   useEffect(() => {
-    const chartTimer = setInterval(() => {
-      const delta = (Math.random() - 0.45) * 1.5;
-      const nextPrice = Number((livePrice + delta).toFixed(2));
-      
-      setLivePrice(nextPrice);
-      setChartData((prev) => {
-        // limit list to last 25 values
-        const sliced = prev.length >= 25 ? prev.slice(1) : prev;
-        return [...sliced, nextPrice];
+    const activeTick = lastTickBySymbol['R_100'];
+    if (!activeTick) return;
+
+    const nextPrice = Number(activeTick.quote.toFixed(2));
+    setLivePrice(nextPrice);
+    
+    setChartData((prev) => {
+      const sliced = prev.length >= 25 ? prev.slice(1) : prev;
+      return [...sliced, nextPrice];
+    });
+
+    // Growth multiplier simulation only active if they has connection
+    if (isContractActive && !isLiveConnected) {
+      setMultiplier((prev) => {
+        const rateVal = parseFloat(accumulatorRate) / 100;
+        const nextMult = prev + (prev * rateVal) + (Math.random() * 0.02);
+        
+        if (nextMult >= 3.0) {
+          handleContractOutcome(true, nextMult);
+        } else if (Math.random() > 0.88) { // crash risk
+          handleContractOutcome(false, nextMult);
+        }
+        
+        return parseFloat(nextMult.toFixed(4));
       });
-
-      // Growth multiplier simulation only active if they has connection
-      if (isContractActive && !isLiveConnected) {
-        setMultiplier((prev) => {
-          const rateVal = parseFloat(accumulatorRate) / 100;
-          const nextMult = prev + (prev * rateVal) + (Math.random() * 0.02);
-          
-          if (nextMult >= 3.0) {
-            handleContractOutcome(true, nextMult);
-          } else if (Math.random() > 0.88) { // crash risk
-            handleContractOutcome(false, nextMult);
-          }
-          
-          return parseFloat(nextMult.toFixed(4));
-        });
-      }
-
-    }, 1500);
-
-    return () => clearInterval(chartTimer);
-  }, [livePrice, isContractActive, accumulatorRate, isLiveConnected]);
+    }
+  }, [lastTickBySymbol['R_100'], isContractActive, accumulatorRate, isLiveConnected]);
 
   const handleContractOutcome = (success: boolean, finalMult: number) => {
     setIsContractActive(false);

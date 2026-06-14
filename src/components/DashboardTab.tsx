@@ -18,6 +18,8 @@ interface DashboardProps {
   setActiveTab: (tab: TabType) => void;
   addLog: (msg: string, type: 'info' | 'success' | 'error' | 'warning') => void;
   loadSignalToBot: (signal: MarketSignal) => void;
+  lastTickBySymbol: Record<string, { quote: number; symbol: string; lastDigit: number; epoch: number }>;
+  digitsHistoryBySymbol: Record<string, number[]>;
 }
 
 const QUOTES = [
@@ -32,7 +34,9 @@ export default function DashboardTab({
   username, 
   setActiveTab, 
   addLog,
-  loadSignalToBot
+  loadSignalToBot,
+  lastTickBySymbol,
+  digitsHistoryBySymbol
 }: DashboardProps) {
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,16 +45,16 @@ export default function DashboardTab({
   const [signals, setSignals] = useState<MarketSignal[]>([
     {
       id: 1,
-      market: 'Volatility 25 (1s) Index',
-      condition: 'Over 4 should be above 55% and Most & 2nd Most appearing digit should be in 5–9.',
+      market: 'Volatility 25 Index',
+      condition: 'Over 4 should be above 55% and Most appearing digit should be in 5–9.',
       description: 'Waits for consecutive high digits to trigger an Over 4 buy contract.',
       values: [
-        { key: 'Over 4%', value: '63.3%' },
-        { key: 'Most Digit', value: '7 (16.7%)' },
-        { key: '2nd Most', value: '9 (12.5%)' },
-        { key: 'Least Digit', value: '3 (5.0%)' }
+        { key: 'Over 4%', value: '50.0%' },
+        { key: 'Most Digit', value: '7 (10.0%)' },
+        { key: '2nd Most', value: '9 (10.0%)' },
+        { key: 'Least Digit', value: '3 (10.0%)' }
       ],
-      confidence: 53.9,
+      confidence: 50.0,
       type: 'OVER',
       target: 4,
       actionLabel: 'Load Over 4 Signal'
@@ -61,12 +65,12 @@ export default function DashboardTab({
       condition: 'Odd% should be above 55% & Most appearing digits should be odd.',
       description: 'Waits for high odd ratio to execute an Odd trade strategy.',
       values: [
-        { key: 'Odd Ratio', value: '60.8%' },
-        { key: 'Most Digit', value: '5 (13.3%)' },
-        { key: '2nd Most', value: '1 (12.5%)' },
-        { key: 'Least Digit', value: '8 (5.0%)' }
+        { key: 'Odd Ratio', value: '50.0%' },
+        { key: 'Most Digit', value: '5 (10.0%)' },
+        { key: '2nd Most', value: '1 (10.0%)' },
+        { key: 'Least Digit', value: '8 (10.0%)' }
       ],
-      confidence: 51.1,
+      confidence: 50.0,
       type: 'ODD',
       target: 1,
       actionLabel: 'Load Odd Signal'
@@ -77,12 +81,12 @@ export default function DashboardTab({
       condition: 'Odd% should be above 55% and Most appearing digits should be odd.',
       description: 'High momentum scanning for odd digits on speedy 1s index.',
       values: [
-        { key: 'Odd Ratio', value: '57.5%' },
-        { key: 'Most Digit', value: '1 (14.2%)' },
-        { key: '2nd Most', value: '9 (12.5%)' },
-        { key: 'Least Digit', value: '6 (5.8%)' }
+        { key: 'Odd Ratio', value: '50.0%' },
+        { key: 'Most Digit', value: '1 (10.0%)' },
+        { key: '2nd Most', value: '9 (10.0%)' },
+        { key: 'Least Digit', value: '6 (10.0%)' }
       ],
-      confidence: 40.8,
+      confidence: 50.0,
       type: 'ODD',
       target: 1,
       actionLabel: 'Load Odd Signal'
@@ -93,12 +97,12 @@ export default function DashboardTab({
       condition: 'Under 5 should be above 55% and Most appearing digit should be in 0–4.',
       description: 'Scans for steady low-digit sequences for Under 5 premium trades.',
       values: [
-        { key: 'Under 5%', value: '56.7%' },
-        { key: 'Most Digit', value: '4 (15.0%)' },
-        { key: '2nd Most', value: '2 (13.3%)' },
-        { key: 'Least Digit', value: '6 (6.7%)' }
+        { key: 'Under 5%', value: '50.0%' },
+        { key: 'Most Digit', value: '4 (10.0%)' },
+        { key: '2nd Most', value: '2 (10.0%)' },
+        { key: 'Least Digit', value: '6 (10.0%)' }
       ],
-      confidence: 39.2,
+      confidence: 50.0,
       type: 'UNDER',
       target: 5,
       actionLabel: 'Load Under 5 Signal'
@@ -113,41 +117,67 @@ export default function DashboardTab({
     return () => clearInterval(quoteTimer);
   }, []);
 
-  // Simulate real-time signal ticking
+  const mapMarketNameToSymbol = (marketName: string): string => {
+    if (marketName.includes('25')) return 'R_25';
+    if (marketName.includes('50')) return 'R_50';
+    if (marketName.includes('75')) return 'R_75';
+    if (marketName.includes('100 (1s)')) return '1HZ100V';
+    return 'R_100';
+  };
+
+  // Compute live signals reactively from real streamed histories
   useEffect(() => {
-    const tickingTimer = setInterval(() => {
-      setSignals((prevSignals) => 
-        prevSignals.map((sig) => {
-          // Adjust confidence by tiny random bounds
-          const confidenceDelta = (Math.random() - 0.5) * 1.8;
-          const newConfidence = Math.min(Math.max(sig.confidence + confidenceDelta, 30), 75);
+    setSignals((prevSignals) => 
+      prevSignals.map((sig) => {
+        const symbol = mapMarketNameToSymbol(sig.market);
+        const rawHistory = digitsHistoryBySymbol[symbol] || [];
+        if (rawHistory.length === 0) return sig;
 
-          // Adjust primary percentage value
-          const primaryVal = parseFloat(sig.values[0].value);
-          const valDelta = (Math.random() - 0.5) * 1.5;
-          const newVal = Math.min(Math.max(primaryVal + valDelta, 45), 70).toFixed(1);
+        // Calculate primary percentage value
+        let ratioVal = 50.0;
+        let pLabel = '';
 
-          const updatedValues = [...sig.values];
-          updatedValues[0] = { ...updatedValues[0], value: `${newVal}%` };
+        if (sig.type === 'OVER') {
+          const over4Count = rawHistory.filter(d => d > 4).length;
+          ratioVal = (over4Count / rawHistory.length) * 100;
+          pLabel = 'Over 4%';
+        } else if (sig.type === 'UNDER') {
+          const under5Count = rawHistory.filter(d => d < 5).length;
+          ratioVal = (under5Count / rawHistory.length) * 100;
+          pLabel = 'Under 5%';
+        } else if (sig.type === 'ODD') {
+          const oddCount = rawHistory.filter(d => d % 2 !== 0).length;
+          ratioVal = (oddCount / rawHistory.length) * 100;
+          pLabel = 'Odd Ratio';
+        }
 
-          // Randomly shuffle most appearing digits slightly
-          if (Math.random() > 0.70) {
-            const digit = Math.floor(Math.random() * 10);
-            const freq = (11 + Math.random() * 6).toFixed(1);
-            updatedValues[1] = { ...updatedValues[1], value: `${digit} (${freq}%)` };
-          }
+        // Compute digit analytics frequencies
+        const counts = Array(10).fill(0);
+        rawHistory.forEach(d => {
+          if (d >= 0 && d <= 9) counts[d]++;
+        });
+        const total = rawHistory.length || 1;
+        const mappedCounts = counts.map((c, i) => ({ digit: i, percent: (c / total) * 100 })).sort((a, b) => b.percent - a.percent);
 
-          return {
-            ...sig,
-            confidence: parseFloat(newConfidence.toFixed(1)),
-            values: updatedValues
-          };
-        })
-      );
-    }, 3500);
+        const mostDigit = mappedCounts[0];
+        const secMostDigit = mappedCounts[1];
+        const leastDigit = mappedCounts[9];
 
-    return () => clearInterval(tickingTimer);
-  }, []);
+        const updatedValues = [
+          { key: pLabel, value: `${ratioVal.toFixed(1)}%` },
+          { key: 'Most Digit', value: `${mostDigit.digit} (${mostDigit.percent.toFixed(1)}%)` },
+          { key: '2nd Most', value: `${secMostDigit.digit} (${secMostDigit.percent.toFixed(1)}%)` },
+          { key: 'Least Digit', value: `${leastDigit.digit} (${leastDigit.percent.toFixed(1)}%)` }
+        ];
+
+        return {
+          ...sig,
+          confidence: parseFloat(ratioVal.toFixed(1)),
+          values: updatedValues
+        };
+      })
+    );
+  }, [digitsHistoryBySymbol]);
 
   const handleXMLUpload = () => {
     addLog("Analyzing XML schema from file stream...", "info");
