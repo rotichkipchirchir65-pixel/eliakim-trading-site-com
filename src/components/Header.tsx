@@ -124,7 +124,7 @@ export default function Header({
             <button
               onClick={() => {
                 const redirectUrl = encodeURIComponent(window.location.origin + "/");
-                const oauthUrl = `https://oauth.deriv.com/oauth?app_id=${derivAppId}&l=en&redirect_uri=${redirectUrl}`;
+                const oauthUrl = `https://oauth.deriv.app/oauth?app_id=${derivAppId}&l=en&redirect_uri=${redirectUrl}`;
                 addLog(`Redirecting to secure Deriv OAuth portal with App ID: ${derivAppId}...`, "info");
                 window.location.href = oauthUrl;
               }}
@@ -134,108 +134,7 @@ export default function Header({
               Log in
             </button>
 
-            {/* 2. API Settings / Token configuration popover */}
-            <div className="relative">
-              <button
-                onClick={() => setIsSetupOpen(!isSetupOpen)}
-                className="bg-[#152238] hover:bg-[#1f304f] active:bg-[#0c1524] text-white text-xs font-semibold px-3 py-1.5 rounded cursor-pointer transition-all shadow-sm uppercase font-mono tracking-wider flex items-center gap-1.5"
-                title="Configure custom App ID, redirect routes, or manual token settings"
-              >
-                <span>API Settings</span>
-                <ChevronDown className="w-3 h-3 text-white/85" />
-              </button>
 
-              {isSetupOpen && (
-                <div className="absolute right-0 mt-2.5 w-80 bg-white border border-gray-250 rounded-2xl shadow-xl p-4 z-50 text-xs text-gray-700" id="deriv-popover">
-                  <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-3">
-                    <span className="font-bold text-gray-800 flex items-center gap-1.5">
-                      <Shield className="w-4 h-4 text-emerald-500" />
-                      Deriv Integration Hub
-                    </span>
-                    <button 
-                      onClick={() => setIsSetupOpen(false)}
-                      className="p-1 hover:bg-gray-100 rounded text-gray-400 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  
-                  <div className="space-y-3.5">
-                    <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100 text-blue-900 space-y-1 bg-clip-padding">
-                      <span className="block font-bold text-[11px]">Configure OAuth Redirection:</span>
-                      <p className="text-[10px] leading-relaxed text-blue-800 font-medium">
-                        1. Go to the Deriv Developer Console at <a href="https://api.deriv.com/" target="_blank" rel="noopener noreferrer" className="underline font-bold hover:text-blue-950">api.deriv.com</a>.<br/>
-                        2. Add this environment's **Redirect URL** (or your Vercel URL):
-                      </p>
-                      <div className="flex flex-col gap-1.5 mt-1.5">
-                        <div className="flex items-center bg-white border border-blue-100 rounded p-1.5 justify-between gap-1 font-mono text-[9px] text-gray-700 select-all">
-                          <span className="break-all whitespace-pre-wrap">{window.location.origin}/</span>
-                          <button 
-                            onClick={() => {
-                              navigator.clipboard.writeText(window.location.origin + "/");
-                              addLog("Redirect URL copied to clipboard!", "success");
-                            }}
-                            className="p-1 hover:bg-gray-100 rounded text-blue-650 flex-shrink-0 cursor-pointer"
-                            title="Copy Active URL"
-                          >
-                            <Clipboard className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        
-                        <div className="flex items-center bg-white border border-blue-100 rounded p-1.5 justify-between gap-1 font-mono text-[9px] text-gray-700 select-all">
-                          <span className="break-all whitespace-pre-wrap text-emerald-700">https://eliakim-trading-site-com-4y76.vercel.app/</span>
-                          <button 
-                            onClick={() => {
-                              navigator.clipboard.writeText("https://eliakim-trading-site-com-4y76.vercel.app/");
-                              addLog("Production Vercel URL copied to clipboard!", "success");
-                            }}
-                            className="p-1 hover:bg-gray-100 rounded text-emerald-650 flex-shrink-0 cursor-pointer"
-                            title="Copy Production URL"
-                          >
-                            <Clipboard className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      <p className="text-[9.5px] leading-relaxed text-blue-800 font-medium mt-1">
-                        3. Register/retrieve your **App ID** and paste below:
-                      </p>
-                    </div>
-
-                    {/* APP ID CONFIG */}
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[9px] font-bold text-gray-450 uppercase tracking-widest block font-mono">My App ID:</label>
-                      <input
-                        type="text"
-                        value={inputValue}
-                        onChange={(e) => {
-                          setInputValue(e.target.value);
-                          setDerivAppId(e.target.value);
-                        }}
-                        placeholder="e.g. 33yjzVFBvxegoDiBsKb9K"
-                        className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-mono text-xs text-gray-800"
-                      />
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        if (!inputValue.trim()) {
-                          addLog("Please enter a valid Deriv App ID first.", "error");
-                          return;
-                        }
-                        const redirectUrl = encodeURIComponent(window.location.origin + "/");
-                        const oauthUrl = `https://oauth.deriv.com/oauth?app_id=${inputValue.trim()}&l=en&redirect_uri=${redirectUrl}`;
-                        addLog(`Saving layout configuration and redirecting to secure portal...`, "success");
-                        window.location.href = oauthUrl;
-                      }}
-                      className="w-full py-2 bg-gradient-to-r from-red-500 to-red-600 text-white font-bold uppercase text-[10px] tracking-wider rounded-xl transition-all shadow-sm hover:from-red-600 hover:to-red-700 flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      Save & Force Connection
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* 3. Sign up button */}
             <a
