@@ -1,0 +1,6 @@
+{
+  "name": "BinaryTool",
+  "description": "The ultimate companion in Deriv Automations, featuring Bot Builder, Analysistools, Free Bots, Pro AI, Auto Trader, Ultimate Bot, DTrader, and real-time trading calculators.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
