@@ -9,6 +9,7 @@ import ProAITab from './components/ProAITab';
 import AutoTraderTab from './components/AutoTraderTab';
 import UltimateBotTab from './components/UltimateBotTab';
 import DTraderTab from './components/DTraderTab';
+import ManualTradingSection from './components/ManualTradingSection';
 import SidebarSummary from './components/SidebarSummary';
 import AICompanion from './components/AICompanion';
 import FooterStatus from './components/FooterStatus';
@@ -35,6 +36,96 @@ export default function App() {
   const [demoBalance, setDemoBalance] = useState(10000.00);
   const [realBalance, setRealBalance] = useState(250.00);
   const [username, setUsername] = useState('ROT91864236');
+
+  // Deriv OAuth State
+  const [derivAccounts, setDerivAccounts] = useState<{ account: string; token: string; cur: string }[]>(() => {
+    try {
+      const stored = localStorage.getItem('deriv_accounts');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [activeDerivAcct, setActiveDerivAcct] = useState<string | null>(() => {
+    return localStorage.getItem('deriv_active_acct');
+  });
+
+  const [derivAppId, setDerivAppId] = useState<string>(() => {
+    return localStorage.getItem('deriv_app_id') || '33yjzVFBvxegoDiBsKb9K';
+  });
+  
+  // Persistent WebSocket Ref to allow trades submission
+  const wsRef = useState<WebSocket | null>(null); // simple container state
+  const [liveWs, setLiveWs] = useState<WebSocket | null>(null);
+
+  // Helper mapping functions
+  const mapMarketToSymbol = (marketName: string): string => {
+    const name = marketName.toLowerCase();
+    if (name.includes('100 (1s)') || name.includes('100(1s)')) return '1HZ100V';
+    if (name.includes('10 (1s)') || name.includes('10(1s)')) return '1HZ10V';
+    if (name.includes('100')) return 'R_100';
+    if (name.includes('75')) return 'R_75';
+    if (name.includes('50')) return 'R_50';
+    if (name.includes('25')) return 'R_25';
+    if (name.includes('10')) return 'R_10';
+    return 'R_100';
+  };
+
+  const mapContractType = (typeStr: string): string => {
+    const str = typeStr.toLowerCase();
+    if (str.includes('even')) return 'DIGITEVEN';
+    if (str.includes('odd')) return 'DIGITODD';
+    if (str.includes('differ')) return 'DIGITDIFF';
+    if (str.includes('match')) return 'DIGITMATCH';
+    if (str.includes('over')) return 'DIGITOVER';
+    if (str.includes('under')) return 'DIGITUNDER';
+    if (str.includes('rise') || str.includes('call') || str.includes('up')) return 'CALL';
+    if (str.includes('fall') || str.includes('put') || str.includes('down')) return 'PUT';
+    return 'DIGITEVEN';
+  };
+
+  const executeDerivTrade = (marketName: string, contractType: string, stake: number, duration: number = 1, durationUnit: string = 't'): boolean => {
+    if (!activeDerivAcct) {
+      addLog("Live Account Locked! Please log into your Deriv account in the header first to trade real markets.", "error");
+      return false;
+    }
+
+    if (!liveWs || liveWs.readyState !== WebSocket.OPEN) {
+      addLog("Active WebSocket with Deriv server is offline. Please authorize or reload.", "warning");
+      return false;
+    }
+
+    const symbolCode = mapMarketToSymbol(marketName);
+    const typeCode = mapContractType(contractType);
+    const activeAcctObj = derivAccounts.find(a => a.account === activeDerivAcct);
+    const activeCurrency = activeAcctObj?.cur || 'USD';
+
+    addLog(`[Live trade command] Transmitting direct purchase sequence to Deriv API: ${symbolCode} (${typeCode}) stake: $${stake}...`, 'info');
+
+    try {
+      const orderPayload = {
+        buy: 1,
+        price: stake,
+        parameters: {
+          amount: stake,
+          basis: 'stake',
+          contract_type: typeCode,
+          currency: activeCurrency,
+          duration: duration,
+          duration_unit: durationUnit,
+          symbol: symbolCode
+        }
+      };
+
+      liveWs.send(JSON.stringify(orderPayload));
+      addLog(`[Live trade sent] Purchase request transmitted! Check reports list for execution status.`, 'success');
+      return true;
+    } catch (err: any) {
+      addLog(`[Live trade submission error]: ${err?.message || err}`, 'error');
+      return false;
+    }
+  };
   
   // UI Panels toggles
   const [isSidebarOpen, setSidebarOpen] = useState(true);
@@ -89,18 +180,199 @@ export default function App() {
   // Calculate current active balance depending on mode
   const currentBalance = isDemo ? demoBalance : realBalance;
 
-  // React to transaction stream to update mock funds balances in real-time
+  // React to transaction stream to update mock funds balances in real-time only if NO active live account exists
   useEffect(() => {
     if (transactions.length === 0) return;
+    if (activeDerivAcct) return; // Do not use fake balances if real accounts are active
     const latestTx = transactions[transactions.length - 1];
     
-    // Check if duplicate of last record to avoid re-adding
     if (isDemo) {
       setDemoBalance((prev) => Math.max(0, prev + latestTx.profit));
     } else {
       setRealBalance((prev) => Math.max(0, prev + latestTx.profit));
     }
-  }, [transactions]);
+  }, [transactions, activeDerivAcct]);
+
+  // Parse Deriv accounts from URL query on redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('acct1') && params.has('token1')) {
+      const parsed: { account: string; token: string; cur: string }[] = [];
+      let i = 1;
+      while (params.has(`acct${i}`)) {
+        parsed.push({
+          account: params.get(`acct${i}`) || '',
+          token: params.get(`token${i}`) || '',
+          cur: params.get(`cur${i}`) || ''
+        });
+        i++;
+      }
+
+      if (parsed.length > 0) {
+        setDerivAccounts(parsed);
+        const firstReal = parsed.find(a => !a.account.startsWith('VRTC')) || parsed[0];
+        setActiveDerivAcct(firstReal.account);
+        localStorage.setItem('deriv_accounts', JSON.stringify(parsed));
+        localStorage.setItem('deriv_active_acct', firstReal.account);
+        setIsDemo(firstReal.account.startsWith('VRTC'));
+        setUsername(firstReal.account);
+        
+        // Remove query parameters from Address bar
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        
+        addLog(`Deriv OAuth Authenticated successfully! Loaded ${parsed.length} account(s). Active login: ${firstReal.account}`, 'success');
+      }
+    }
+  }, []);
+
+  // Sync balances and authorize active account with Deriv WS API
+  useEffect(() => {
+    if (!activeDerivAcct || derivAccounts.length === 0) return;
+    const selectedAccount = derivAccounts.find(a => a.account === activeDerivAcct);
+    if (!selectedAccount || !selectedAccount.token) return;
+
+    addLog(`Establishing live WebSocket connection to Deriv API for ${activeDerivAcct}...`, 'info');
+
+    const appID = derivAppId || '33yjzVFBvxegoDiBsKb9K';
+    const wsUrl = `wss://ws.derivws.com/websockets/v3?app_id=${appID}&l=en`;
+    
+    let ws: WebSocket | null = null;
+    let pingInterval: NodeJS.Timeout | null = null;
+
+    try {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        // Log in to Deriv using the active token
+        ws?.send(JSON.stringify({ authorize: selectedAccount.token }));
+        setLiveWs(ws);
+        
+        // Setup simple heartbeat ping to keep connection alive
+        pingInterval = setInterval(() => {
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ ping: 1 }));
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.error) {
+            addLog(`[Deriv API Error]: ${data.error.message || 'Verification failed.'}`, 'error');
+            return;
+          }
+          
+          if (data.msg_type === 'authorize') {
+            const auth = data.authorize;
+            addLog(`[Deriv Authorize] Connected to ${auth.loginid} (${auth.fullname || 'Verified Account'})`, 'success');
+            
+            const liveBal = Number(auth.balance || 0);
+            if (activeDerivAcct.startsWith('VRTC')) {
+              setDemoBalance(liveBal);
+            } else {
+              setRealBalance(liveBal);
+            }
+            
+            // Subscribe to real-time balance ticks & live account transaction logs
+            ws?.send(JSON.stringify({ balance: 1, subscribe: 1 }));
+            ws?.send(JSON.stringify({ transaction: 1, subscribe: 1 }));
+            addLog("Subscribed to live account transactions & updates.", "info");
+          }
+          
+          if (data.msg_type === 'balance') {
+            const bal = data.balance;
+            const liveBal = Number(bal.balance || 0);
+            if (activeDerivAcct.startsWith('VRTC')) {
+              setDemoBalance(liveBal);
+            } else {
+              setRealBalance(liveBal);
+            }
+          }
+
+          // Capture real transactions executed on the Deriv platform
+          if (data.msg_type === 'transaction') {
+            const tx = data.transaction;
+            const liveTxId = 'TX-' + tx.contract_id;
+            
+            if (tx.action === 'buy') {
+              addLog(`[Live Transacted] Contract of $${tx.amount} USD purchased on ${tx.symbol}.`, 'info');
+              setTransactions((prev) => {
+                if (prev.some(t => t.id === liveTxId)) return prev;
+                return [
+                  {
+                    id: liveTxId,
+                    time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+                    type: 'Buy',
+                    market: tx.symbol.replace('R_', 'Volatility ').replace('1HZ10V', 'Volatility 10 (1s) Index').replace('1HZ100V', 'Volatility 100 (1s) Index'),
+                    stake: Number(tx.amount),
+                    payout: 0,
+                    profit: -Number(tx.amount),
+                    status: 'pending',
+                    contractType: tx.longcode ? tx.longcode.split(' ')[0] + ' Option' : 'Live Option'
+                  },
+                  ...prev
+                ];
+              });
+            } else if (tx.action === 'sell') {
+              const profitColor = Number(tx.amount) > 0;
+              addLog(`[Live Resolution] Contract ${tx.contract_id} completed. Yield: $${tx.amount} USD.`, profitColor ? 'success' : 'error');
+              
+              setTransactions((prev) => {
+                const updated = [...prev];
+                const targetIdx = updated.findIndex(t => t.id === liveTxId);
+                
+                if (targetIdx !== -1) {
+                  const buyTx = updated[targetIdx];
+                  const actualPayout = Number(tx.amount);
+                  updated[targetIdx] = {
+                    ...buyTx,
+                    payout: actualPayout,
+                    profit: parseFloat((actualPayout - buyTx.stake).toFixed(2)),
+                    status: actualPayout > 0 ? 'won' : 'lost'
+                  };
+                } else {
+                  // Fallback if buy event was missed
+                  updated.unshift({
+                    id: liveTxId,
+                    time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+                    type: 'Buy',
+                    market: tx.symbol.replace('R_', 'Volatility '),
+                    stake: Number(tx.amount) > 0 ? Number((tx.amount / 1.9).toFixed(2)) : 0.5,
+                    payout: Number(tx.amount),
+                    profit: Number(tx.amount) > 0 ? Number((tx.amount - 0.5).toFixed(2)) : -0.5,
+                    status: Number(tx.amount) > 0 ? 'won' : 'lost',
+                    contractType: 'Live Option'
+                  });
+                }
+                return updated;
+              });
+            }
+          }
+        } catch (err) {
+          console.error("Websocket parse error:", err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket connection error:", err);
+      };
+
+      ws.onclose = () => {
+        setLiveWs(null);
+        if (pingInterval) clearInterval(pingInterval);
+      };
+    } catch (err) {
+      console.error("Cannot load Websocket:", err);
+    }
+
+    return () => {
+      if (ws) ws.close();
+      if (pingInterval) clearInterval(pingInterval);
+    };
+  }, [activeDerivAcct, derivAccounts, derivAppId]);
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning') => {
     const nowStr = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -127,6 +399,16 @@ export default function App() {
       setRealBalance(500.00);
       addLog("Simulated Real Account credited with $500.00 trial funds.", "info");
     }
+  };
+
+  const handleClearDerivAccounts = () => {
+    setDerivAccounts([]);
+    setActiveDerivAcct(null);
+    localStorage.removeItem('deriv_accounts');
+    localStorage.removeItem('deriv_active_acct');
+    setUsername('ROT91864236');
+    setIsDemo(true);
+    addLog("Disconnected Deriv real account from active memory.", "warning");
   };
 
   // Preset loaders for the shop
@@ -194,6 +476,25 @@ export default function App() {
         setAiOpen={setAiOpen}
         username={username}
         setUsername={setUsername}
+        derivAccounts={derivAccounts}
+        activeDerivAcct={activeDerivAcct}
+        setActiveDerivAcct={(acct) => {
+          setActiveDerivAcct(acct);
+          localStorage.setItem('deriv_active_acct', acct);
+          const selected = derivAccounts.find(a => a.account === acct);
+          setIsDemo(acct.startsWith('VRTC'));
+          if (selected) {
+            setUsername(selected.account);
+            addLog(`Switched active Deriv account to key context: ${acct}`, 'info');
+          }
+        }}
+        derivAppId={derivAppId}
+        setDerivAppId={(appId) => {
+          setDerivAppId(appId);
+          localStorage.setItem('deriv_app_id', appId);
+        }}
+        onClearDerivAccounts={handleClearDerivAccounts}
+        addLog={addLog}
       />
 
       {/* 2. Horizontal Navigation tape linking pages */}
@@ -226,6 +527,8 @@ export default function App() {
             <AnalysistoolsTab 
               addLog={addLog}
               addTransaction={addTransaction}
+              isLiveConnected={activeDerivAcct !== null}
+              executeDerivTrade={executeDerivTrade}
             />
           )}
 
@@ -247,6 +550,8 @@ export default function App() {
             <AutoTraderTab 
               addLog={addLog}
               addTransaction={addTransaction}
+              isLiveConnected={activeDerivAcct !== null}
+              executeDerivTrade={executeDerivTrade}
             />
           )}
 
@@ -256,6 +561,8 @@ export default function App() {
               addTransaction={addTransaction}
               botConfig={botConfig}
               setBotConfig={setBotConfig}
+              isLiveConnected={activeDerivAcct !== null}
+              executeDerivTrade={executeDerivTrade}
             />
           )}
 
@@ -263,75 +570,19 @@ export default function App() {
             <DTraderTab 
               addLog={addLog}
               addTransaction={addTransaction}
+              isLiveConnected={activeDerivAcct !== null}
+              executeDerivTrade={executeDerivTrade}
             />
           )}
 
           {/* 4. Elegant fallbacks for peripheral tabs requested/displayed in nav tape */}
           {activeTab === 'Manual Trading' && (
-            <div className="p-6 bg-gray-100 min-h-full flex items-center justify-center font-sans">
-              <div className="bg-white p-8 rounded-3xl border border-gray-200 shadow-md max-w-lg w-full">
-                <div className="flex items-center gap-3 border-b border-gray-150 pb-4 mb-4 select-none">
-                  <div className="p-2 bg-teal-50 text-teal-600 rounded-lg">
-                    <Hand className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="font-bold text-gray-800 text-lg leading-normal">Manual Position Taker</h2>
-                    <p className="text-xs text-gray-400">Order execution directly below custom synthetic ticks.</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-1.5 text-xs">
-                    <span className="text-gray-500 font-bold">Select Volatility Index:</span>
-                    <select className="bg-gray-50 border border-gray-200 rounded p-2.5 font-bold focus:outline-none focus:bg-white text-gray-800 cursor-pointer">
-                      <option>Volatility 100 Index</option>
-                      <option>Volatility 10 (1s) Index</option>
-                      <option>Volatility 75 Index</option>
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1 text-xs">
-                      <span className="text-gray-500 font-bold">Stake USD:</span>
-                      <input type="number" defaultValue="1.0" className="bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono font-bold focus:outline-none" />
-                    </div>
-                    <div className="flex flex-col gap-1 text-xs">
-                      <span className="text-gray-500 font-bold">Duration (Ticks or Secs):</span>
-                      <input type="number" defaultValue="5" className="bg-gray-50 border border-gray-200 rounded p-2 text-xs font-mono font-bold focus:outline-none" />
-                    </div>
-                  </div>
-
-                  <div className="bg-blue-50/50 p-3 rounded-lg text-[11px] text-blue-900 border border-blue-100">
-                    💡 Perfect for trading breakouts manually while your background Bots scan other continuous indexes in parallel!
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      addLog("Manual Contract initiated. Position processing...", "info");
-                      setTimeout(() => {
-                        const win = Math.random() > 0.50;
-                        const rand = Math.floor(100000 + Math.random() * 900000);
-                        addTransaction({
-                          id: 'TX-' + rand,
-                          time: new Date().toLocaleTimeString('en-US', { hour12: false }),
-                          type: 'Buy',
-                          market: 'Volatility 100 Index (Manual)',
-                          stake: 1.0,
-                          payout: win ? 1.95 : 0,
-                          profit: win ? 0.95 : -1.0,
-                          status: win ? 'won' : 'lost',
-                          contractType: 'Manual Option'
-                        });
-                        addLog(`Manual contract processed: ${win ? 'WON (+$0.95)' : 'LOST (-$1.00)'}`, win ? 'success' : 'error');
-                      }, 800);
-                    }}
-                    className="w-full py-3 bg-blue-900 hover:bg-blue-950 text-white rounded-xl text-xs font-bold shadow-md transition-all cursor-pointer"
-                  >
-                    Expressed Purchase Order
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ManualTradingSection 
+              addLog={addLog}
+              addTransaction={addTransaction}
+              isLiveConnected={activeDerivAcct !== null}
+              executeDerivTrade={executeDerivTrade}
+            />
           )}
 
           {activeTab === 'Speedbot' && (

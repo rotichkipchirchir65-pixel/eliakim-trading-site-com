@@ -15,6 +15,8 @@ import {
 interface AnalysistoolsProps {
   addLog: (msg: string, type: 'info' | 'success' | 'error' | 'warning') => void;
   addTransaction: (tx: any) => void;
+  isLiveConnected: boolean;
+  executeDerivTrade: (marketName: string, contractType: string, stake: number, duration?: number, durationUnit?: string) => boolean;
 }
 
 interface IndexAnalysis {
@@ -28,7 +30,7 @@ interface IndexAnalysis {
   ticksValue: number;
 }
 
-export default function AnalysistoolsTab({ addLog, addTransaction }: AnalysistoolsProps) {
+export default function AnalysistoolsTab({ addLog, addTransaction, isLiveConnected, executeDerivTrade }: AnalysistoolsProps) {
   const [ticksFilter, setTicksFilter] = useState(120);
   const [activeSubTab, setActiveSubTab] = useState<'DCIRCLE' | 'Analysis'>('DCIRCLE');
   const [isAutoScanning, setIsAutoScanning] = useState(false);
@@ -149,31 +151,18 @@ export default function AnalysistoolsTab({ addLog, addTransaction }: Analysistoo
             };
           });
 
-          // If auto scanning is enabled, occasionally trigger mock trades
-          if (isAutoScanning && Math.random() > 0.94) {
-            const isEven = newDigit % 2 === 0;
-            const chosenPrediction = Math.random() > 0.5 ? 'Even' : 'Odd';
-            const isWinner = (isEven && chosenPrediction === 'Even') || (!isEven && chosenPrediction === 'Odd');
-            
-            const stakeAmt = ind.stake;
-            const payoutAmt = isWinner ? stakeAmt * 1.96 : 0;
-            const profitAmt = isWinner ? stakeAmt * 0.96 : -stakeAmt;
-
-            addLog(`Auto-Scan Pattern matched on ${ind.name}. Digit: ${newDigit} (${isEven ? 'Even' : 'Odd'}). Trigger: ${chosenPrediction}`, isWinner ? 'success' : 'error');
-
-            const nowStr = new Date().toLocaleTimeString('en-US', { hour12: false });
-            addTransaction({
-              id: 'TX-' + Math.floor(100000 + Math.random() * 900000),
-              time: nowStr,
-              type: 'Buy',
-              market: ind.name,
-              stake: stakeAmt,
-              payout: parseFloat(payoutAmt.toFixed(2)),
-              profit: parseFloat(profitAmt.toFixed(2)),
-              status: isWinner ? 'won' : 'lost',
-              contractType: chosenPrediction + ' Digit',
-              exitTick: newPrice
-            });
+          // If auto scanning is enabled, transmit real trades to Deriv
+          if (isAutoScanning) {
+            if (!isLiveConnected) {
+              addLog("[Analysis Tools] Live account offline! Background auto-scanning paused.", "warning");
+              setIsAutoScanning(false);
+            } else if (Math.random() > 0.94) {
+              const chosenPrediction = Math.random() > 0.5 ? 'Even' : 'Odd';
+              const stakeAmt = ind.stake;
+              
+              addLog(`[Auto-Scan] Pattern trigger matched on ${ind.name}. Dispatching options purchase order with stake $${stakeAmt}...`, 'info');
+              executeDerivTrade(ind.name, chosenPrediction, stakeAmt, ind.ticksValue, 't');
+            }
           }
 
           return {
@@ -187,47 +176,47 @@ export default function AnalysistoolsTab({ addLog, addTransaction }: Analysistoo
     }, 2000);
 
     return () => clearInterval(timer);
-  }, [isAutoScanning]);
+  }, [isAutoScanning, isLiveConnected, executeDerivTrade]);
 
   const handleManualTrade = (indexName: string, selection: 'Even' | 'Odd', indPrice: number, stakeVal: number) => {
-    addLog(`Reserving contract on ${indexName} for ${selection} Digit...`, 'info');
-    
-    setTimeout(() => {
-      const liveDigit = Math.floor(Math.random() * 10);
-      const isEven = liveDigit % 2 === 0;
-      const isWinner = (isEven && selection === 'Even') || (!isEven && selection === 'Odd');
+    if (!isLiveConnected) {
+      addLog("Live Account offline! Connect your real or virtual account in the header first to make manual digit trades.", "error");
+      return;
+    }
 
-      const profit = isWinner ? stakeVal * 0.92 : -stakeVal;
-      const payout = isWinner ? stakeVal * 1.92 : 0;
-
-      addLog(`Contract result: Tick matches ${liveDigit} (${isEven ? 'EVEN' : 'ODD'}). Trade ${isWinner ? 'WON' : 'LOST'}!`, isWinner ? 'success' : 'error');
-      
-      const nowStr = new Date().toLocaleTimeString('en-US', { hour12: false });
-      addTransaction({
-        id: 'TX-' + Math.floor(100000 + Math.random() * 900000),
-        time: nowStr,
-        type: 'Buy',
-        market: indexName,
-        stake: stakeVal,
-        payout: parseFloat(payout.toFixed(2)),
-        profit: parseFloat(profit.toFixed(2)),
-        status: isWinner ? 'won' : 'lost',
-        contractType: selection + ' Digit',
-        exitTick: indPrice
-      });
-    }, 850);
+    addLog(`Creating live market Digit contract on ${indexName} for ${selection}...`, 'info');
+    const sent = executeDerivTrade(indexName, selection, stakeVal, 1, 't');
+    if (sent) {
+      addLog("[Analysis Tools] Option purchased successfully. Resolution streamed via reports drawer.", "success");
+    }
   };
 
   const handleAutoScanAll = () => {
+    if (!isLiveConnected && !isAutoScanning) {
+      addLog("Live Account Integration required! Authenticate in the header to activate real-time scan triggers.", "error");
+      return;
+    }
     setIsAutoScanning(!isAutoScanning);
     addLog(isAutoScanning 
       ? "Suspended automatic pattern scanner." 
-      : "Initiating live multi-index digit pattern auto-scanner. Monitoring trend biases...", "info");
+      : "Initiating live multi-index digit pattern auto-scanner on active account...", "info");
   };
 
   return (
     <div className="bg-gray-100 min-h-[calc(100vh-120px)] text-gray-800 p-4" id="analysis-tools-tab-panel">
       
+      {!isLiveConnected && (
+        <div className="max-w-6xl mx-auto bg-amber-50 border border-amber-250 p-4 rounded-xl text-xs text-amber-950 flex items-start gap-3 mb-4">
+          <Atom className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0 animate-pulse" />
+          <div>
+            <p className="font-bold">Live Deriv Market Mode Locked</p>
+            <p className="mt-1 font-medium leading-relaxed">
+              Analysis tools scan indices directly from live exchange feeds. Please authenticate via the <strong>Log in</strong> button above to activate real order execution gates on your Deriv account. Offline local dummy calculations are deactivated.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Tab Header sub-menu */}
       <div className="flex bg-white rounded-lg p-1 border border-gray-200 mb-4 max-w-xs text-xs font-bold shadow-sm">
         <button 

@@ -1,4 +1,20 @@
-import { MessageSquare, FileText, ChevronDown, RefreshCw, Wallet, Radio, Menu, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { 
+  MessageSquare, 
+  FileText, 
+  ChevronDown, 
+  RefreshCw, 
+  Wallet, 
+  Radio, 
+  Menu, 
+  X,
+  Clipboard,
+  Globe,
+  LogOut,
+  Settings,
+  Shield,
+  Key
+} from 'lucide-react';
 
 interface HeaderProps {
   balance: number;
@@ -10,6 +26,13 @@ interface HeaderProps {
   setAiOpen: (val: boolean) => void;
   username: string;
   setUsername: (name: string) => void;
+  derivAccounts: { account: string; token: string; cur: string }[];
+  activeDerivAcct: string | null;
+  setActiveDerivAcct: (acct: string) => void;
+  derivAppId: string;
+  setDerivAppId: (appId: string) => void;
+  onClearDerivAccounts: () => void;
+  addLog: (msg: string, type: 'info' | 'success' | 'error' | 'warning') => void;
 }
 
 export default function Header({
@@ -21,8 +44,22 @@ export default function Header({
   setSidebarOpen,
   setAiOpen,
   username,
-  setUsername
+  setUsername,
+  derivAccounts,
+  activeDerivAcct,
+  setActiveDerivAcct,
+  derivAppId,
+  setDerivAppId,
+  onClearDerivAccounts,
+  addLog
 }: HeaderProps) {
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(derivAppId);
+
+  // Sync input value with parent state
+  useEffect(() => {
+    setInputValue(derivAppId);
+  }, [derivAppId]);
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50 px-4 py-2.5 flex items-center justify-between" id="app-header">
       {/* Left side: Logo */}
@@ -80,52 +117,278 @@ export default function Header({
 
       {/* Right side: Wallet, Account Swapper & Demo Settings */}
       <div className="flex items-center gap-3">
-        {/* Account selection: USD / DEMO dropdown */}
-        <div className="flex items-center bg-gray-100 rounded-lg p-1 text-xs font-semibold" id="account-type-swapper">
-          <button 
-            type="button"
-            onClick={() => setIsDemo(false)}
-            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${!isDemo ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            Real
-          </button>
-          <button 
-            type="button"
-            onClick={() => setIsDemo(true)}
-            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${isDemo ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 hover:text-amber-800'}`}
-          >
-            Demo
-          </button>
-        </div>
+        
+        {derivAccounts.length === 0 ? (
+          <div className="flex items-center gap-2">
+            {/* 1. Log in button - immediate OAuth redirect */}
+            <button
+              onClick={() => {
+                const redirectUrl = encodeURIComponent(window.location.origin + "/");
+                const oauthUrl = `https://oauth.deriv.com/oauth?app_id=${derivAppId}&l=en&redirect_uri=${redirectUrl}`;
+                addLog(`Redirecting to secure Deriv OAuth portal with App ID: ${derivAppId}...`, "info");
+                window.location.href = oauthUrl;
+              }}
+              className="bg-[#152238] hover:bg-[#1f304f] active:bg-[#0c1524] text-white text-xs font-semibold px-4 py-1.5 rounded transition-all cursor-pointer shadow-sm uppercase font-mono tracking-wider"
+              title="Click to authenticate directly with Deriv"
+            >
+              Log in
+            </button>
 
-        {/* USD Balance Card */}
-        <div className="flex items-center border border-gray-200 shadow-sm rounded-lg pl-2.5 pr-1.5 py-1 bg-white select-none gap-2">
-          <div className="flex flex-col items-end">
-            <span className="text-[9px] uppercase tracking-wider text-gray-400 font-bold leading-none">
-              {isDemo ? 'Virtual Balance' : 'Real Wallet'}
-            </span>
-            <span className={`font-mono text-xs font-bold ${isDemo ? 'text-amber-600' : 'text-emerald-600'}`}>
-              {balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-            </span>
+            {/* 2. API Settings / Token configuration popover */}
+            <div className="relative">
+              <button
+                onClick={() => setIsSetupOpen(!isSetupOpen)}
+                className="bg-[#152238] hover:bg-[#1f304f] active:bg-[#0c1524] text-white text-xs font-semibold px-3 py-1.5 rounded cursor-pointer transition-all shadow-sm uppercase font-mono tracking-wider flex items-center gap-1.5"
+                title="Configure custom App ID, redirect routes, or manual token settings"
+              >
+                <span>API Settings</span>
+                <ChevronDown className="w-3 h-3 text-white/85" />
+              </button>
+
+              {isSetupOpen && (
+                <div className="absolute right-0 mt-2.5 w-80 bg-white border border-gray-250 rounded-2xl shadow-xl p-4 z-50 text-xs text-gray-700" id="deriv-popover">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-3">
+                    <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-emerald-500" />
+                      Deriv Integration Hub
+                    </span>
+                    <button 
+                      onClick={() => setIsSetupOpen(false)}
+                      className="p-1 hover:bg-gray-100 rounded text-gray-400 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-3.5">
+                    <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100 text-blue-900 space-y-1 bg-clip-padding">
+                      <span className="block font-bold text-[11px]">Configure OAuth Redirection:</span>
+                      <p className="text-[10px] leading-relaxed text-blue-800 font-medium">
+                        1. Go to the Deriv Developer Console at <a href="https://api.deriv.com/" target="_blank" rel="noopener noreferrer" className="underline font-bold hover:text-blue-950">api.deriv.com</a>.<br/>
+                        2. Add this environment's **Redirect URL** (or your Vercel URL):
+                      </p>
+                      <div className="flex flex-col gap-1.5 mt-1.5">
+                        <div className="flex items-center bg-white border border-blue-100 rounded p-1.5 justify-between gap-1 font-mono text-[9px] text-gray-700 select-all">
+                          <span className="break-all whitespace-pre-wrap">{window.location.origin}/</span>
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(window.location.origin + "/");
+                              addLog("Redirect URL copied to clipboard!", "success");
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded text-blue-650 flex-shrink-0 cursor-pointer"
+                            title="Copy Active URL"
+                          >
+                            <Clipboard className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-center bg-white border border-blue-100 rounded p-1.5 justify-between gap-1 font-mono text-[9px] text-gray-700 select-all">
+                          <span className="break-all whitespace-pre-wrap text-emerald-700">https://eliakim-trading-site-com-4y76.vercel.app/</span>
+                          <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText("https://eliakim-trading-site-com-4y76.vercel.app/");
+                              addLog("Production Vercel URL copied to clipboard!", "success");
+                            }}
+                            className="p-1 hover:bg-gray-100 rounded text-emerald-650 flex-shrink-0 cursor-pointer"
+                            title="Copy Production URL"
+                          >
+                            <Clipboard className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[9.5px] leading-relaxed text-blue-800 font-medium mt-1">
+                        3. Register/retrieve your **App ID** and paste below:
+                      </p>
+                    </div>
+
+                    {/* APP ID CONFIG */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-bold text-gray-450 uppercase tracking-widest block font-mono">My App ID:</label>
+                      <input
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => {
+                          setInputValue(e.target.value);
+                          setDerivAppId(e.target.value);
+                        }}
+                        placeholder="e.g. 33yjzVFBvxegoDiBsKb9K"
+                        className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 font-mono text-xs text-gray-800"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (!inputValue.trim()) {
+                          addLog("Please enter a valid Deriv App ID first.", "error");
+                          return;
+                        }
+                        const redirectUrl = encodeURIComponent(window.location.origin + "/");
+                        const oauthUrl = `https://oauth.deriv.com/oauth?app_id=${inputValue.trim()}&l=en&redirect_uri=${redirectUrl}`;
+                        addLog(`Saving layout configuration and redirecting to secure portal...`, "success");
+                        window.location.href = oauthUrl;
+                      }}
+                      className="w-full py-2 bg-gradient-to-r from-red-500 to-red-600 text-white font-bold uppercase text-[10px] tracking-wider rounded-xl transition-all shadow-sm hover:from-red-600 hover:to-red-700 flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      Save & Force Connection
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Sign up button */}
+            <a
+              href="https://track.deriv.com/link.fcg?op=register"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-[#152238] hover:bg-[#1f304f] active:bg-[#0c1524] text-white text-xs font-semibold px-4 py-1.5 rounded transition-all shadow-sm uppercase font-mono tracking-wider text-center cursor-pointer"
+            >
+              Sign up
+            </a>
           </div>
-          
-          <button 
-            onClick={onResetBalance}
-            title={isDemo ? "Replenish Balance" : "Reset simulated funds"}
-            className="p-1.5 bg-gray-50 hover:bg-gray-100 rounded text-gray-500 transition-all cursor-pointer"
-            id="btn-replenish-wallet"
-          >
-            <RefreshCw className="w-3 h-3 hover:rotate-180 transition-transform duration-500" />
-          </button>
-        </div>
+        ) : (
+          <>
+            {/* Case: Already Authorized with real/demo Deriv accounts */}
+            <div className="relative">
+              <button
+                onClick={() => setIsSetupOpen(!isSetupOpen)}
+                className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 shadow-sm cursor-pointer transition-all"
+              >
+                <Key className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                <span>{activeDerivAcct}</span>
+                <ChevronDown className="w-3 h-3 text-emerald-500" />
+              </button>
 
-        {/* Main dropdown menu indicators */}
-        <div className="hidden sm:flex items-center gap-1 border-l border-gray-200 pl-3">
-          <button className="flex items-center gap-1 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg border border-gray-200 cursor-pointer">
-            <Wallet className="w-3.5 h-3.5 text-gray-500" />
-            <span>Deposit</span>
-          </button>
-        </div>
+              {isSetupOpen && (
+                <div className="absolute right-0 mt-2.5 w-80 bg-white border border-gray-250 rounded-2xl shadow-xl p-4 z-50 text-xs text-gray-700" id="deriv-popover">
+                  <div className="flex items-center justify-between border-b border-gray-100 pb-2 mb-3">
+                    <span className="font-bold text-gray-800 flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-emerald-500" />
+                      Deriv Integration Hub
+                    </span>
+                    <button 
+                      onClick={() => setIsSetupOpen(false)}
+                      className="p-1 hover:bg-gray-100 rounded text-gray-400 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="bg-emerald-50 text-emerald-800 p-2.5 rounded-lg flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="font-semibold text-[11px]">Real accounts successfully synchronized!</span>
+                    </div>
+
+                    <div>
+                      <span className="block font-bold text-gray-450 uppercase tracking-wider text-[9px] mb-1.5">Select Active Wallet:</span>
+                      <div className="space-y-1.5">
+                        {derivAccounts.map((acct) => {
+                          const isActive = acct.account === activeDerivAcct;
+                          return (
+                            <button
+                              key={acct.account}
+                              onClick={() => {
+                                setActiveDerivAcct(acct.account);
+                                setIsSetupOpen(false);
+                              }}
+                              className={`w-full text-left p-2 rounded-lg border flex items-center justify-between transition-all cursor-[pointer] ${
+                                isActive 
+                                  ? 'bg-emerald-50/55 border-emerald-300 font-bold text-emerald-950' 
+                                  : 'bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-700'
+                              }`}
+                            >
+                              <div>
+                                <span className="block font-semibold">{acct.account}</span>
+                                <span className="text-[10px] text-gray-400 font-medium font-mono leading-none">Currency: {acct.cur || 'USD'}</span>
+                              </div>
+                              {isActive ? (
+                                <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-800 uppercase font-bold font-mono">Active</span>
+                              ) : (
+                                <span className="text-[9px] text-gray-400 font-mono">Select</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100 flex gap-2">
+                      <button
+                        onClick={() => {
+                          onClearDerivAccounts();
+                          setIsSetupOpen(false);
+                        }}
+                        className="flex-1 py-1.5 border border-red-200 text-red-650 bg-red-50/50 hover:bg-red-100 hover:text-red-700 rounded-lg text-center font-bold font-mono text-[10px] uppercase cursor-pointer transition-all flex items-center justify-center gap-1"
+                      >
+                        <LogOut className="w-3 h-3" />
+                        Disconnect
+                      </button>
+                      <button
+                        onClick={() => {
+                          addLog("Requesting immediate re-authorization sweep...", "info");
+                          setIsSetupOpen(false);
+                          window.location.reload();
+                        }}
+                        className="flex-1 py-1.5 border border-gray-250 bg-gray-50 rounded-lg text-center font-bold text-gray-600 hover:bg-gray-100 text-[10px] uppercase cursor-pointer transition-all"
+                      >
+                        Re-authorize
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Account selection: USD / DEMO dropdown */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-1 text-xs font-semibold" id="account-type-swapper">
+              <button 
+                type="button"
+                onClick={() => setIsDemo(false)}
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${!isDemo ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Real
+              </button>
+              <button 
+                type="button"
+                onClick={() => setIsDemo(true)}
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${isDemo ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 hover:text-amber-800'}`}
+              >
+                Demo
+              </button>
+            </div>
+            
+            {/* USD Balance Card */}
+            <div className="flex items-center border border-gray-200 shadow-sm rounded-lg pl-2.5 pr-1.5 py-1 bg-white select-none gap-2">
+              <div className="flex flex-col items-end">
+                <span className="text-[9px] uppercase tracking-wider text-gray-400 font-bold leading-none">
+                  {isDemo ? 'Virtual Balance' : 'Real Wallet'}
+                </span>
+                <span className={`font-mono text-xs font-bold ${isDemo ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                </span>
+              </div>
+              
+              <button 
+                onClick={onResetBalance}
+                title={isDemo ? "Replenish Demo Balance" : "Account Status Synced"}
+                className="p-1.5 bg-gray-50 hover:bg-gray-100 rounded text-gray-500 transition-all cursor-pointer"
+                id="btn-replenish-wallet"
+              >
+                <RefreshCw className="w-3 h-3 hover:rotate-180 transition-transform duration-500" />
+              </button>
+            </div>
+
+            {/* Deposit shortcut */}
+            <div className="hidden sm:flex items-center gap-1 border-l border-gray-200 pl-3">
+              <button className="flex items-center gap-1 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 px-2.5 py-1.5 rounded-lg border border-gray-200 cursor-pointer">
+                <Wallet className="w-3.5 h-3.5 text-gray-500" />
+                <span>Deposit</span>
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Mobile menu triggers */}
         <div className="flex md:hidden gap-1">

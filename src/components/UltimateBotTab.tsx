@@ -18,57 +18,61 @@ interface UltimateBotProps {
   addTransaction: (tx: any) => void;
   botConfig: BotConfig;
   setBotConfig: (cfg: BotConfig) => void;
+  isLiveConnected: boolean;
+  executeDerivTrade: (market: string, contractType: string, stake: number, duration: number, durationUnit: string) => boolean;
 }
 
 export default function UltimateBotTab({ 
   addLog, 
   addTransaction, 
   botConfig, 
-  setBotConfig 
+  setBotConfig,
+  isLiveConnected,
+  executeDerivTrade
 }: UltimateBotProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [runsCounter, setRunsCounter] = useState(0);
 
-  // Set up automated running loop simulation
+  // Set up automated running loop mapping to real Deriv trades
   useEffect(() => {
     if (!isRunning) return;
 
-    addLog(`Engine active: Executing custom strategy. TP target: $${botConfig.tp}, SL safety: $${botConfig.sl}`, 'success');
+    if (!isLiveConnected) {
+      addLog("[Ultimate Bot Warning] Active account disconnected. Automated robot execution suspended.", 'warning');
+      setIsRunning(false);
+      return;
+    }
+
+    addLog(`Automated robot active: Executing contract sequence on Volatility 100 Index. TP target: $${botConfig.tp}`, 'success');
 
     const interval = setInterval(() => {
       setRunsCounter((prev) => prev + 1);
 
-      // Simulates real option outcome matching parameters
-      const won = Math.random() > 0.46; // Close to natural binary risk outcome
-      const profitValue = won ? botConfig.stake * 0.95 : -botConfig.stake;
-      const payoutValue = won ? botConfig.stake * 1.95 : 0;
-      
-      const randPrice = 700 + Math.random() * 45;
-      const nowStr = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const success = executeDerivTrade(
+        'Volatility 100 Index',
+        botConfig.initialTradeType,
+        botConfig.stake,
+        botConfig.lastNTicks,
+        't'
+      );
 
-      addLog(`[Ultimate Bot] Trade completed! Outcome: ${won ? 'WIN (+$' + (botConfig.stake * 0.95).toFixed(2) + ')' : 'LOSS (-$' + botConfig.stake.toFixed(2) + ')'}`, won ? 'success' : 'error');
-
-      addTransaction({
-        id: 'TX-' + Math.floor(100000 + Math.random() * 900000),
-        time: nowStr,
-        type: 'Buy',
-        market: 'Volatility 100 (1s) Index',
-        stake: botConfig.stake,
-        payout: parseFloat(payoutValue.toFixed(2)),
-        profit: parseFloat(profitValue.toFixed(2)),
-        status: won ? 'won' : 'lost',
-        contractType: 'Ultimate ' + botConfig.initialTradeType,
-        exitTick: parseFloat(randPrice.toFixed(2))
-      });
-    }, 4500);
+      if (!success) {
+        addLog("[Ultimate Bot] Purchase order dispatch was blocked or failed. Pausing runner.", "error");
+        setIsRunning(false);
+      }
+    }, 6000);
 
     return () => clearInterval(interval);
-  }, [isRunning, botConfig]);
+  }, [isRunning, botConfig, isLiveConnected, executeDerivTrade]);
 
   const toggleRunState = () => {
+    if (!isLiveConnected && !isRunning) {
+      addLog("Live Account Integration required! Connect your live or virtual account in the header first to start bot runs.", "error");
+      return;
+    }
     setIsRunning(!isRunning);
     if (!isRunning) {
-      addLog("Initializing Ultimate Bot options compiler...", 'info');
+      addLog("Initializing Ultimate Bot options compiler on live account...", 'info');
     } else {
       addLog("Suspended Ultimate Bot run.", 'warning');
     }
@@ -92,7 +96,20 @@ export default function UltimateBotTab({
   return (
     <div className="bg-gray-100 min-h-[calc(100vh-120px)] p-6 text-gray-800 font-sans select-none" id="ultimate-bot-panel">
       
-      <div className="max-w-4xl mx-auto bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
+      <div className="max-w-4xl mx-auto bg-white border border-gray-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+        
+        {!isLiveConnected && (
+          <div className="mb-6 bg-amber-50 border border-amber-250 p-4 rounded-2xl text-xs text-amber-950 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-bold">Live Deriv Market Mode Locked</p>
+              <p className="mt-1 font-medium leading-relaxed">
+                This automated options bot builder executes trades directly on live exchanges. To launch it, please click <strong>Log in</strong> in the header and authenticate. Simulated test executions are deactivated.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Header decoration */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-100 pb-4 mb-6 gap-3">
           <div className="flex items-center gap-2.5">

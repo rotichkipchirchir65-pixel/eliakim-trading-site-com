@@ -15,9 +15,16 @@ import {
 interface DTraderProps {
   addLog: (msg: string, type: 'info' | 'success' | 'error' | 'warning') => void;
   addTransaction: (tx: any) => void;
+  isLiveConnected: boolean;
+  executeDerivTrade: (market: string, contractType: string, stake: number, duration: number, durationUnit: string) => boolean;
 }
 
-export default function DTraderTab({ addLog, addTransaction }: DTraderProps) {
+export default function DTraderTab({ 
+  addLog, 
+  addTransaction,
+  isLiveConnected,
+  executeDerivTrade
+}: DTraderProps) {
   const [accumulatorRate, setAccumulatorRate] = useState('1%');
   const [stakeAmount, setStakeAmount] = useState(1.0);
   const [takeProfit, setTakeProfit] = useState(true);
@@ -40,13 +47,12 @@ export default function DTraderTab({ addLog, addTransaction }: DTraderProps) {
         return [...sliced, nextPrice];
       });
 
-      // Growth multiplier for active accumulators
-      if (isContractActive) {
+      // Growth multiplier simulation only active if they has connection
+      if (isContractActive && !isLiveConnected) {
         setMultiplier((prev) => {
           const rateVal = parseFloat(accumulatorRate) / 100;
           const nextMult = prev + (prev * rateVal) + (Math.random() * 0.02);
           
-          // Occasionally trigger profit target completion or crash
           if (nextMult >= 3.0) {
             handleContractOutcome(true, nextMult);
           } else if (Math.random() > 0.88) { // crash risk
@@ -60,7 +66,7 @@ export default function DTraderTab({ addLog, addTransaction }: DTraderProps) {
     }, 1500);
 
     return () => clearInterval(chartTimer);
-  }, [livePrice, isContractActive, accumulatorRate]);
+  }, [livePrice, isContractActive, accumulatorRate, isLiveConnected]);
 
   const handleContractOutcome = (success: boolean, finalMult: number) => {
     setIsContractActive(false);
@@ -90,20 +96,26 @@ export default function DTraderTab({ addLog, addTransaction }: DTraderProps) {
         exitTick: livePrice
       });
 
-      // reset multi
       setMultiplier(1.0);
     }, 100);
   };
 
   const handleBuyClick = () => {
-    if (isContractActive) {
-      // Manual close
-      addLog("[DTrader Accumulators] Reselling active contract manually to secure profits...", "info");
-      handleContractOutcome(true, multiplier);
-    } else {
-      setIsContractActive(true);
-      setMultiplier(1.05);
-      addLog(`[DTrader Accumulators] Contract purchased with rate ${accumulatorRate}. Current multiplier compound scanning...`, "info");
+    if (!isLiveConnected) {
+      addLog("Live Account Integration Required! Connect your real or virtual Deriv account in the header first.", "error");
+      return;
+    }
+
+    addLog(`[DTrader Live Engine] Constructing new Rise options order on Volatility 100 Index. Stake: $${stakeAmount} USD...`, "info");
+    const sent = executeDerivTrade(
+      'Volatility 100 Index',
+      'Rise',
+      stakeAmount,
+      5,
+      't'
+    );
+    if (sent) {
+      addLog("[DTrader Live Engine] Order successfully transmitted. Follow resolution updates inside the transaction ledger.", "success");
     }
   };
 
@@ -123,6 +135,18 @@ export default function DTraderTab({ addLog, addTransaction }: DTraderProps) {
   return (
     <div className="bg-gray-100 min-h-[calc(100vh-120px)] p-6 text-gray-800 font-sans select-none" id="dtrader-panel">
       
+      {!isLiveConnected && (
+        <div className="max-w-6xl mx-auto bg-amber-50 border border-amber-250 p-4 rounded-2xl text-xs text-amber-950 flex items-start gap-3 mb-6">
+          <Activity className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0 animate-pulse" />
+          <div>
+            <p className="font-bold">Live Deriv Market Mode Locked</p>
+            <p className="mt-1 font-medium leading-relaxed">
+              Positions taken inside the DTrader layout execute directly on Deriv's live pricing servers. Please authenticate your account using the <strong>Log in</strong> option in the header above to unlock live trade execution. Offline local simulation matches have been deactivated.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6" id="dtrader-view-grid">
         
         {/* Graph and analytics pane */}

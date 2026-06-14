@@ -15,9 +15,16 @@ import {
 interface AutoTraderProps {
   addLog: (msg: string, type: 'info' | 'success' | 'error' | 'warning') => void;
   addTransaction: (tx: any) => void;
+  isLiveConnected: boolean;
+  executeDerivTrade: (market: string, contractType: string, stake: number, duration: number, durationUnit: string) => boolean;
 }
 
-export default function AutoTraderTab({ addLog, addTransaction }: AutoTraderProps) {
+export default function AutoTraderTab({ 
+  addLog, 
+  addTransaction,
+  isLiveConnected,
+  executeDerivTrade
+}: AutoTraderProps) {
   // Digit Card state
   const [digitTicksTrigger, setDigitTicksTrigger] = useState(5);
   const [digitMatchSelection, setDigitMatchSelection] = useState('Even');
@@ -56,9 +63,16 @@ export default function AutoTraderTab({ addLog, addTransaction }: AutoTraderProp
     return () => clearInterval(timer);
   }, []);
 
-  // Simulating auto trading runs
+  // Executing auto trading runs on Deriv WebSocket
   useEffect(() => {
     if (!isDigitRunning && !isPctRunning) return;
+
+    if (!isLiveConnected) {
+      addLog("[Auto Trader] Connection lost! Pausing running automations.", "warning");
+      setIsDigitRunning(false);
+      setIsPctRunning(false);
+      return;
+    }
 
     const runTimer = setInterval(() => {
       if (isDigitRunning) {
@@ -66,27 +80,19 @@ export default function AutoTraderTab({ addLog, addTransaction }: AutoTraderProp
         const recentSubset = digitHistory.slice(-digitTicksTrigger);
         const countMatching = recentSubset.filter(x => x === (digitMatchSelection === 'Even' ? 'E' : 'O')).length;
         
-        // Let's mock a buy check
         if (countMatching >= 3) {
-          const outcomeWinner = Math.random() > 0.48; // ~52% win probability
-          const nowStr = new Date().toLocaleTimeString('en-US', { hour12: false });
-          const profit = outcomeWinner ? digitStake * 0.95 : -digitStake;
-          const payout = outcomeWinner ? digitStake * 1.95 : 0;
-
-          addLog(`[Auto Trader] Digits strategy triggered on Volatility 100 Index. Prediction: ${digitMatchSelection}, Outcome: ${outcomeWinner ? 'WIN' : 'LOSS'}`, outcomeWinner ? 'success' : 'error');
+          addLog(`[Auto Trader] Digits strategy triggered condition. prediction: ${digitMatchSelection}`, 'info');
           
-          addTransaction({
-            id: 'TX-' + Math.floor(100000 + Math.random() * 900000),
-            time: nowStr,
-            type: 'Buy',
-            market: 'Volatility 100 Index',
-            stake: digitStake,
-            payout: parseFloat(payout.toFixed(2)),
-            profit: parseFloat(profit.toFixed(2)),
-            status: outcomeWinner ? 'won' : 'lost',
-            contractType: 'Auto ' + digitMatchSelection,
-            exitTick: 650 + Math.random() * 12
-          });
+          const success = executeDerivTrade(
+            'Volatility 100 Index',
+            digitMatchSelection,
+            digitStake,
+            1,
+            't'
+          );
+          if (!success) {
+            setIsDigitRunning(false);
+          }
         }
       }
 
@@ -94,33 +100,30 @@ export default function AutoTraderTab({ addLog, addTransaction }: AutoTraderProp
         // Compare percentages threshold
         const targetPct = pctConditionType === 'Even%' ? evenPct : oddPct;
         if (targetPct >= pctConditionValue) {
-          const outcomeWinner = Math.random() > 0.5;
-          const nowStr = new Date().toLocaleTimeString('en-US', { hour12: false });
-          const profit = outcomeWinner ? pctStake * 0.95 : -pctStake;
-          const payout = outcomeWinner ? pctStake * 1.95 : 0;
-
-          addLog(`[Auto Trader] Percentage strategy threshold met (${targetPct}%). executing order. Result: ${outcomeWinner ? 'WON' : 'LOST'}`, outcomeWinner ? 'success' : 'error');
-
-          addTransaction({
-            id: 'TX-' + Math.floor(100000 + Math.random() * 900000),
-            time: nowStr,
-            type: 'Buy',
-            market: 'Volatility 100 Index',
-            stake: pctStake,
-            payout: parseFloat(payout.toFixed(2)),
-            profit: parseFloat(profit.toFixed(2)),
-            status: outcomeWinner ? 'won' : 'lost',
-            contractType: 'Pct ' + pctConditionType,
-            exitTick: 650 + Math.random() * 12
-          });
+          addLog(`[Auto Trader] Percentage strategy condition met (${targetPct}%). Transmitting purchase...`, 'info');
+          
+          const success = executeDerivTrade(
+            'Volatility 100 Index',
+            pctConditionType === 'Even%' ? 'Even' : 'Odd',
+            pctStake,
+            1,
+            't'
+          );
+          if (!success) {
+            setIsPctRunning(false);
+          }
         }
       }
-    }, 5500);
+    }, 6000);
 
     return () => clearInterval(runTimer);
-  }, [isDigitRunning, isPctRunning, digitHistory, evenPct, oddPct, digitMatchSelection, digitStake, pctConditionType, pctConditionValue, pctStake]);
+  }, [isDigitRunning, isPctRunning, digitHistory, evenPct, oddPct, digitMatchSelection, digitStake, pctConditionType, pctConditionValue, pctStake, isLiveConnected, executeDerivTrade]);
 
   const toggleDigitBot = () => {
+    if (!isLiveConnected && !isDigitRunning) {
+      addLog("Live Account offline! Authorization required to execute auto trades on real markets.", "error");
+      return;
+    }
     setIsDigitRunning(!isDigitRunning);
     addLog(isDigitRunning
       ? "Suspended Even/Odd (Digits) bot scanning."
@@ -128,6 +131,10 @@ export default function AutoTraderTab({ addLog, addTransaction }: AutoTraderProp
   };
 
   const togglePctBot = () => {
+    if (!isLiveConnected && !isPctRunning) {
+      addLog("Live Account offline! Authorization required to execute auto trades on real markets.", "error");
+      return;
+    }
     setIsPctRunning(!isPctRunning);
     addLog(isPctRunning
       ? "Suspended Even/Odd (Percentages) bot scanning."
@@ -136,6 +143,19 @@ export default function AutoTraderTab({ addLog, addTransaction }: AutoTraderProp
 
   return (
     <div className="bg-gray-100 min-h-[calc(100vh-120px)] text-gray-800 p-6 font-sans select-none" id="auto-trader-tab-panel">
+      
+      {!isLiveConnected && (
+        <div className="max-w-6xl mx-auto mb-6 bg-amber-50 border border-amber-250 p-4 rounded-2xl text-xs text-amber-950 flex items-start gap-3">
+          <Sparkles className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0 animate-pulse" />
+          <div>
+            <p className="font-bold">Live Deriv Market Mode Locked</p>
+            <p className="mt-1 font-medium leading-relaxed">
+              Auto Trader runs directly on real-time financial indices. Please click <strong>Log in</strong> in the header and authenticate your Deriv account to authorize bot runs. Offline local modes are deactivated.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Cards layout aligned with Screenshot 3 */}
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8" id="auto-trader-cards-row">
         
